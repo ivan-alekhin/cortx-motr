@@ -88,6 +88,7 @@
 #include "fdmi/fdmi.h"
 #include "fdmi/service.h"
 #include "fdmi/fol_fdmi_src.h"
+#include "dtm/service.h"
 
 M0_INTERNAL int m0_time_init(void);
 M0_INTERNAL void m0_time_fini(void);
@@ -224,6 +225,7 @@ struct init_fini_call subsystem[] = {
 	{ &m0_ss_svc_init,      &m0_ss_svc_fini,      "sss" },
 	{ &m0_dix_cm_module_init, &m0_dix_cm_module_fini, "dix-cm" },
 	{ &m0_fdms_register,    &m0_fdms_unregister,  "fdmi-service" },
+	{ &m0_dtms_register,    &m0_dtms_unregister,  "dtm-service" },
 #endif /* __KERNEL__ */
 	{ &m0_cas_module_init,  &m0_cas_module_fini,  "cas" },
 	{ &m0_parity_init,      &m0_parity_fini,      "parity_math" },

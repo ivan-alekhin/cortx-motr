@@ -880,13 +880,14 @@ static int __service_ctx_create(struct m0_pools_common *pc,
 	return M0_RC(rc);
 }
 
-static bool is_local_rms(const struct m0_conf_service *svc)
+static bool is_local_service_of_type(const struct m0_conf_service *svc,
+				     enum m0_conf_service_type type)
 {
 	const struct m0_conf_process *proc;
 	struct m0_rpc_machine        *mach;
 	const char                   *local_ep;
 
-	if (svc->cs_type != M0_CST_RMS)
+	if (svc->cs_type != type)
 		return false;
 	proc = M0_CONF_CAST(m0_conf_obj_grandparent(&svc->cs_obj),
 			    m0_conf_process);
@@ -898,6 +899,22 @@ static bool is_local_rms(const struct m0_conf_service *svc)
 	       FID_P(&proc->pc_obj.co_id), FID_P(&svc->cs_obj.co_id));
 	return m0_streq(local_ep, proc->pc_endpoint);
 }
+
+static bool is_local_rms(const struct m0_conf_service *svc)
+{
+	return is_local_service_of_type(svc, M0_CST_RMS);
+}
+
+static bool is_local_dtm(const struct m0_conf_service *svc)
+{
+	return is_local_service_of_type(svc, M0_CST_DTM);
+}
+
+static bool is_local_client(const struct m0_conf_service *svc)
+{
+	return is_local_service_of_type(svc, M0_CST_CLIENT);
+}
+
 
 static int active_rm_ctx_create(struct m0_pools_common *pc,
 				bool                    service_connect)
@@ -961,6 +978,15 @@ static int service_ctxs_create(struct m0_pools_common *pc,
 	while ((rc = m0_conf_diter_next_sync(&it, obj_is_service)) ==
 		M0_CONF_DIRNEXT) {
 		svc = M0_CONF_CAST(m0_conf_diter_result(&it), m0_conf_service);
+
+		/**
+		 * Skip local dtm and clovis sevices. We don't need to
+		 * connect to them.
+		 * TODO: Verfiy that client svc is not needed here.
+		 */
+		if (is_local_dtm(svc) || is_local_client(svc))
+			continue;
+
 		/*
 		 * Connection to confd is managed by configuration client.
 		 * confd is already connected in m0_confc_init() to the

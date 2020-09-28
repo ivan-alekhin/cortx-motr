@@ -86,6 +86,7 @@ M0_INTERNAL void m0_dtm_remote_add(struct m0_dtm_remote *rem,
 struct m0_dtm_rpc_remote {
 	struct m0_dtm_remote  rpr_rem;
 	struct m0_rpc_conn   *rpr_conn;
+	uint64_t              rpr_magic;
 };
 
 M0_INTERNAL void m0_dtm_rpc_remote_init(struct m0_dtm_rpc_remote *remote,
@@ -93,6 +94,7 @@ M0_INTERNAL void m0_dtm_rpc_remote_init(struct m0_dtm_rpc_remote *remote,
 					struct m0_dtm *local,
 					struct m0_rpc_conn *conn);
 M0_INTERNAL void m0_dtm_rpc_remote_fini(struct m0_dtm_rpc_remote *remote);
+M0_INTERNAL bool m0_dtm_rpc_remote_is_connected(struct m0_dtm_rpc_remote *remote);
 
 struct m0_dtm_notice {
 	struct m0_dtm_history_id dno_id;

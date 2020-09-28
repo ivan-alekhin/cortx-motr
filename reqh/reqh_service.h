@@ -642,6 +642,9 @@ enum m0_reqh_service_level {
 	M0_FDMI_SVC_LEVEL          = M0_RS_LEVEL_BEFORE_NORMAL - 1,
 	M0_HA_ENTRYPOINT_SVC_LEVEL = M0_RS_LEVEL_BEFORE_NORMAL - 1,
 	M0_RPC_SVC_LEVEL           = M0_HA_LINK_SVC_LEVEL - 1,
+
+	/** TODO: Verify that */
+	M0_DTM_SVC_LEVEL           = M0_RS_LEVEL_NORMAL,
 };
 
 /**

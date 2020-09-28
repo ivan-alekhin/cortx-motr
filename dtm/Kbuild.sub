@@ -16,4 +16,5 @@ m0tr_objects += \
                   dtm/remote.o \
                   dtm/remote_xc.o \
                   dtm/update.o \
-                  dtm/update_xc.o
+                  dtm/update_xc.o \
+                  dtm/client.o

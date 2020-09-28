@@ -94,6 +94,12 @@ M0_INTERNAL void m0_dtm_rpc_remote_init(struct m0_dtm_rpc_remote *remote,
 	remote->rpr_rem.re_ops = &rem_rpc_ops;
 }
 
+M0_INTERNAL bool m0_dtm_rpc_remote_is_connected(struct m0_dtm_rpc_remote *remote)
+{
+	return remote->rpr_conn != NULL &&
+		remote->rpr_conn->c_sm.sm_state == M0_RPC_CONN_ACTIVE;
+}
+
 M0_INTERNAL void m0_dtm_rpc_remote_fini(struct m0_dtm_rpc_remote *remote)
 {
 	m0_dtm_remote_fini(&remote->rpr_rem);

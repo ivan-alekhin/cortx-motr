@@ -14,7 +14,9 @@ nobase_motr_include_HEADERS += \
                                   dtm/object.h \
                                   dtm/operation.h \
                                   dtm/remote.h \
-                                  dtm/update.h
+                                  dtm/update.h \
+                                  dtm/client.h \
+                                  dtm/service.h
 
 motr_libmotr_la_SOURCES  += \
                                   dtm/catalogue.c \
@@ -30,7 +32,9 @@ motr_libmotr_la_SOURCES  += \
                                   dtm/object.c \
                                   dtm/operation.c \
                                   dtm/remote.c \
-                                  dtm/update.c
+                                  dtm/update.c \
+                                  dtm/client.c \
+                                  dtm/service.c
 
 nodist_motr_libmotr_la_SOURCES  += \
                                   dtm/dtm_update_xc.c \

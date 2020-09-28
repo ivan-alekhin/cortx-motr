@@ -1121,6 +1121,15 @@ enum m0_magic_satchel {
 	M0_FDMI_SRC_DOCK_PENDING_FOP_MAGIC = 0xf1eece0ff1ce,
 	/* pending_fops list head magic (feosol obsess) */
 	M0_FDMI_SRC_DOCK_PENDING_FOP_HEAD_MAGIC = 0xfe05010b5e55,
+
+	/* m0_reqh_dtm_service::rdtms_magic (feosol office) */
+	M0_DTMS_REQH_SVC_MAGIC = 0x33fe05010ff1ce77,
+	/* m0_dtm_rpc_remote::rpr_magic (sliceable obi) */
+	M0_DTMS_REMOTE_MAGIC = 0x33511ceab1e0b177,
+	/* remotes list head magic (isoscele bode) */
+	M0_DTMS_REMOTE_HEAD_MAGIC = 0x331505ce1eb0de77,
+	/* m0_dtm_client::dc_magic (abide albee os) */
+	M0_DTMS_CLIENT_MAGIC = 0x33ab1dea1bee0577
 };
 
 #endif /* __MOTR_MAGIC_H__ */
