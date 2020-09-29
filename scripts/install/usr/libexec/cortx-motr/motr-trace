@@ -132,7 +132,7 @@ m0_traced()
             fi
             ;;
 
-        confd*|ha*|ios*|cas*|mds*|rms*|fdmi*)
+        confd*|ha*|ios*|cas*|mds*|rms*|fdmi*|dtm*)
             [[ $MOTR_TRACED_M0D == yes ]] || exit 0
             local server_pid=$(m0_get_server_pid_for $target)
             local trace_file_dir=$(m0_get_m0d_data_dir_for $target)
@@ -153,7 +153,7 @@ m0_traced()
             ;;
 
         *) m0_exit "Failed to start m0traced for unknown target '$target'," \
-                   "available targets are 'kernel', 'confd*', 'ios*', 'cas*', 'fdmi*'" \
+                   "available targets are 'kernel', 'confd*', 'ios*', 'cas*', 'fdmi*', 'dtm*'" \
                    "'mds*' and 'ha*'"
             ;;
     esac

@@ -76,7 +76,7 @@ else
     ha_is_started=false
     confd_is_started=false
     all_services=$(m0_get_services)
-    services=$(echo $all_services | sed -r 's/ha|confd//g')
+    services=$(echo $all_services | sed -r 's/ha|confd|dtm//g')
 
     # check if there are 'ha' and 'confd' services, we need to start them first,
     # but only if there are other services on this node which require mkfs

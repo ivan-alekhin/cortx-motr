@@ -125,6 +125,8 @@ m0_server()
 
         fdmi*)  MOTR_M0D_OPTS+=" -c ${MOTR_CONF_XC:-$MOTR_CONF_XC_DEFAULT}"
             ;;
+        dtm*)  MERO_M0D_OPTS+=" -c ${MERO_CONF_XC:-$MERO_CONF_XC_DEFAULT}"
+            ;;
 
         ios*)  local disks_conf="/etc/motr/disks-$service.conf"
                if [[ -r $disks_conf ]]; then

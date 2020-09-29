@@ -320,6 +320,7 @@ _portal_id()
         ha)     portal_id=45;;
         cas*)   portal_id=46;;
         fdmi)   portal_id=47;;
+        dtm)    portal_id=48;;
     esac
     echo $portal_id
 }
@@ -352,6 +353,7 @@ m0_get_ep_of()
     local ios_tid=401
     local cas_tid=501
     local fdmi_tid=601
+    local dtm_tid=701
     local portal=$(_portal_id $1)
     local ep
     local s
@@ -369,6 +371,8 @@ m0_get_ep_of()
             rms*) ep=$lnid:$lpid:$portal:$((rms_tid++))
                 ;;
             fdmi*) ep=$lnid:$lpid:$portal:$((fdmi_tid++))
+                ;;
+            dtm*) ep=$lnid:$lpid:$portal:$((dtm_tid++))
                 ;;
             ha*)  ep=${MOTR_HA_EP:-$lnid:$lpid:$portal:$((ha_tid++))}
                 ;;
@@ -432,7 +436,7 @@ m0_get_proc_fid_for()
 
 # Return space-separated list of all endpoints in the cluster for particular
 # service type, from genders file
-#   @param  $1  service type (confd mds ios ha rms fdmi)
+#   @param  $1  service type (confd mds ios ha rms fdmi dtm)
 m0_get_global_eps_of()
 {
     local stype=$1
@@ -573,7 +577,7 @@ m0_get_running_servers()
 }
 
 # Return PID of running m0d daemon for particular Motr service
-#   @param  $1  name of a service, e.g. 'mds', 'ios1', 'fdmi'
+#   @param  $1  name of a service, e.g. 'mds', 'ios1', 'fdmi', 'dtm'
 m0_get_server_pid_for()
 {
     local service=$1
@@ -592,7 +596,7 @@ m0_get_server_pid_for()
 }
 
 # Return generated service FID in form of container:key
-#   @param  $1  name of a service, e.g. 'mds', 'ios1', 'fdmi'
+#   @param  $1  name of a service, e.g. 'mds', 'ios1', 'fdmi', 'dtm'
 #   @param  $2  node index in global nodes array where service is located
 m0_build_service_fid()
 {
@@ -608,21 +612,23 @@ m0_build_service_fid()
     sidx=${service//[^0-9]}
     sidx=${sidx:-$sidx_param}
 
+    # See M0_CONF_SERVICE_TYPES in conf/schema.h
     case $stype in
         mds)           cid=1 ;;
         ios)           cid=2 ;;
         confd)         cid=3 ;;
         rms)           cid=4 ;;
-        ha)            cid=5 ;;
-        sns-repair)    cid=6 ;;
-        sns-rebalance) cid=7 ;;
-        addb)          cid=8 ;;
-        sss)           cid=9 ;;
-        cas)           cid=10 ;;
-        dix-repair)    cid=11 ;;
-        dix-rebalance) cid=12 ;;
-        fdmi)          cid=13 ;;
-        iscs)          cid=14 ;;
+        ha)            cid=6 ;;
+        sss)           cid=7 ;;
+        sns-repair)    cid=8 ;;
+        sns-rebalance) cid=9 ;;
+        addb)          cid=10 ;;
+        cas)           cid=11 ;;
+        dix-repair)    cid=12 ;;
+        dix-rebalance) cid=13 ;;
+        fdmi)          cid=17 ;;
+        iscs)          cid=21 ;;
+        dtm)           cid=22 ;;
     esac
 
     printf %s:%d "^s|$(( $cid + $node_idx * 16 ))" $sidx
@@ -767,6 +773,7 @@ _build_process_objects()
             local rms="$(m0_build_service_fid "rms$idx" $node_idx)"
             local fdmi="$(m0_build_service_fid "fdmi$idx" $node_idx)"
             local iscs="$(m0_build_service_fid "iscs$idx" $node_idx)"
+            local dtm="$(m0_build_service_fid "dtm$idx" $node_idx)"
 
             proc_name="$proc_fid_con:$idx"
 
@@ -787,9 +794,9 @@ _build_process_objects()
                 repair="$(m0_build_service_fid ${s/$svc_name/${prefix}-repair} $node_idx)"
                 rebalance="$(m0_build_service_fid ${s/$svc_name/${prefix}-rebalance} $node_idx)"
 
-                obj="{0x72| (($proc_name), [1:3], 0, 0, 0, 0, "\"$ep\"", [7: $sname, $repair, $rebalance, $rms, $addb, $fdmi, $iscs])}"
+                obj="{0x72| (($proc_name), [1:3], 0, 0, 0, 0, "\"$ep\"", [8: $sname, $repair, $rebalance, $rms, $addb, $fdmi, $dtm, $iscs])}"
             else
-                obj="{0x72| (($proc_name), [1:3], 0, 0, 0, 0, "\"$ep\"", [5: $sname, $rms, $addb, $fdmi, $iscs])}"
+                obj="{0x72| (($proc_name), [1:3], 0, 0, 0, 0, "\"$ep\"", [6: $sname, $rms, $addb, $fdmi, $dtm, $iscs])}"
             fi
 
             objs="$objs${objs:+, \n} $obj"
@@ -810,6 +817,7 @@ _type_id()
         mds*)          type_id=@M0_CST_MDS ;;
         ios*)          type_id=@M0_CST_IOS ;;
         fdmi*)         type_id=@M0_CST_FDMI ;;
+        dtm*)          type_id=@M0_CST_DTM ;;
         confd)         type_id=@M0_CST_CONFD ;;
         rms*)          type_id=@M0_CST_RMS ;;
         ha)            type_id=@M0_CST_HA ;;
@@ -879,6 +887,10 @@ _build_service_objects()
             iscs="$(m0_build_service_fid "iscs$idx" $node_idx)"
             type_id=$(_type_id "iscs")
             objs="$objs${objs:+,\n  }{0x73| (($iscs), $type_id, [1: "\"$ep\""], [0], [0])}"
+
+            dtm="$(m0_build_service_fid "dtm$idx" $node_idx)"
+            type_id=$(_type_id "dtm")
+            objs="$objs${objs:+,\n  }{0x73| (($dtm), $type_id, [1: "\"$ep\""], [0], [0])}"
 
             if [[ $s == ios* || $s == cas* ]] ; then
                 local repair
