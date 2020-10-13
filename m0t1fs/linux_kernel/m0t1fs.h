@@ -51,6 +51,8 @@
 #include "m0t1fs/linux_kernel/m0t1fs_addb2.h"
 #include "motr/ha.h"             /* m0_motr_ha */
 #include "conf/confc.h"          /* m0_conf_state */
+#include "dtm/dtm.h"             /* m0_dtm */
+#include "dtm/client.h"          /* m0_dtm_client */
 
 /**
   @defgroup m0t1fs m0t1fs
@@ -785,6 +787,19 @@ struct m0t1fs_sb {
 	struct m0_fid                           csb_profile_fid;
 
 	struct m0_reqh_service                 *csb_rm_service;
+
+	/**
+	 * Local dtm instance, controlling the local client
+	 * dtm "history" of changes.
+	 */
+	struct m0_dtm                           csb_dtm;
+
+	/**
+	 * Basically a collection of m0_dtm_remote to track the
+	 * state of remote dtm "histories".
+	 */
+	struct m0_dtm_client                    csb_dtm_cli;
+
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
 	struct backing_dev_info                 csb_backing_dev_info;

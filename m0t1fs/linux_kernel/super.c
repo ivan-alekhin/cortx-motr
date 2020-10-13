@@ -920,6 +920,11 @@ int m0t1fs_setup(struct m0t1fs_sb *csb, const struct mount_opts *mops)
 	struct m0_conf_root       *root;
 	struct m0_pool_version    *pv;
 	int                        rc;
+	struct m0_uint128 local_id = {
+		.u_hi = csb->csb_process_fid.f_container,
+		.u_lo = csb->csb_process_fid.f_key
+	};
+
 
 	M0_ENTRY();
 	M0_PRE(csb->csb_astthread.t_state == TS_RUNNING);
@@ -1014,6 +1019,12 @@ int m0t1fs_setup(struct m0t1fs_sb *csb, const struct mount_opts *mops)
 	if (rc != 0)
 		goto err_rm_service_quit;
 
+	m0_dtm_init(&csb->csb_dtm, &local_id);
+
+	rc = m0_dtm_client_init(&csb->csb_dtm_cli, &csb->csb_dtm, pc);
+	if (rc != 0)
+		goto err_dtm_fini;
+
 	rc = m0_addb2_sys_net_start_with(sys, &pc->pc_svc_ctxs);
 	if (rc == 0) {
 		m0_confc_close(&root->rt_obj);
@@ -1024,6 +1035,9 @@ int m0t1fs_setup(struct m0t1fs_sb *csb, const struct mount_opts *mops)
 		return M0_RC(0);
 	}
 
+	m0_dtm_client_fini(&csb->csb_dtm_cli);
+err_dtm_fini:
+	m0_dtm_fini(&csb->csb_dtm);
 err_rm_service_quit:
 	m0t1fs_rm_service_quit(csb);
 err_pool_versions_destroy:
@@ -1064,6 +1078,8 @@ err_net_fini:
 
 static void m0t1fs_teardown(struct m0t1fs_sb *csb)
 {
+	m0_dtm_client_fini(&csb->csb_dtm_cli);
+	m0_dtm_fini(&csb->csb_dtm);
 	m0_addb2_sys_net_stop(m0_addb2_global_get());
 	m0t1fs_sb_layouts_fini(csb);
 	/* @todo Make a separate unconfigure api and do this in that */
