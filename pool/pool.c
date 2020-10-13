@@ -905,6 +905,16 @@ static bool is_local_rms(const struct m0_conf_service *svc)
 	return is_local_service_of_type(svc, M0_CST_RMS);
 }
 
+/* XXX:
+ * DTM shall connect to all other DTMs except itself.
+ * If we have two md0 on the same node, they have to connect
+ * to each other but should not try to establish connections
+ * to themselves.
+ * We need to to refine is_local_service_of_type function and verify
+ * that it works fine in that case.
+ * It checks if the function is running on the same node but it may
+ * not work properly for DTM.
+ */
 static bool is_local_dtm(const struct m0_conf_service *svc)
 {
 	return is_local_service_of_type(svc, M0_CST_DTM);
