@@ -262,6 +262,9 @@ M0_INTERNAL int m0_dtm_history_unpack(struct m0_dtm *dtm,
 		htype->hit_ops->hito_find(dtm, htype, &id->hid_id, out);
 	if (result == 0)
 		(*out)->h_remcookie = id->hid_sender;
+	if (result == -2) {
+		M0_ASSERT(0);
+	}
 	return result;
 }
 
@@ -353,6 +356,16 @@ M0_INTERNAL void m0_dtm_controlh_add(struct m0_dtm_controlh *ch,
 				     struct m0_dtm_oper *oper)
 {
 	struct m0_dtm_update *update = oper_tlist_pop(&oper->oprt_uu);
+
+	M0_PRE(update != NULL);
+	m0_dtm_history_add_nop(&ch->ch_history, oper, update);
+}
+
+M0_INTERNAL void m0_dtm_controlh_add_static(struct m0_dtm_controlh *ch,
+					    struct m0_dtm_oper *oper,
+					    struct m0_dtm_update *storage)
+{
+	struct m0_dtm_update *update = storage;
 
 	M0_PRE(update != NULL);
 	m0_dtm_history_add_nop(&ch->ch_history, oper, update);

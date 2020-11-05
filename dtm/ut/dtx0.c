@@ -50,7 +50,9 @@ static struct m0_dtm              dtm_local;
 static struct m0_dtm              dtm_remote[REM_NR];
 static struct m0_dtm_local_remote remote_local[REM_NR];
 static struct m0_dtm_local_remote remote_remote[REM_NR];
-static struct m0_dtm_dtx          dx;
+static struct m0_dtm_local_remote remote_sibling[REM_NR][REM_NR];
+// static struct m0_dtm_dtx          dx;
+static struct m0_dtm_slot_dtx0    dtx0;
 static struct m0_dtm_history      history0[UPDATE_NR * DTM_NR];
 static struct m0_dtm_update       control_local[OPER_NR][2*DTM_NR];
 static struct m0_dtm_update       control_remote[REM_NR][OPER_NR][1];
@@ -179,10 +181,23 @@ static void init0(void)
 					     &m0_dtm_dtx_srv_htype);
 		m0_dtm_history_type_register(&dtm_remote[i],
 					     &m0_dtm_fol_remote_htype);
-		m0_dtm_local_remote_init(&remote_local[i],
-					 &dtm_remote[i].d_id, &dtm_local, NULL);
-		m0_dtm_local_remote_init(&remote_remote[i],
-					 &dtm_local.d_id, &dtm_remote[i], NULL);
+		m0_dtm_history_type_register(&dtm_remote[i], &m0_dtm_dtx_htype);
+		remote_local[i].lre_rem.re_type = M0_DRT_SLOT_OWNER;
+		m0_dtm_local_remote_init_alt(&remote_local[i],
+					 &dtm_remote[i], &dtm_local, NULL);
+		m0_dtm_local_remote_init_alt(&remote_remote[i],
+					 &dtm_local, &dtm_remote[i], NULL);
+	}
+	for (i = 0; i < ARRAY_SIZE(dtm_remote); ++i) {
+		for (j = 0; j < REM_NR; ++j) {
+			if (i == j)
+				continue;
+			remote_sibling[i][j].lre_rem.re_type = M0_DRT_SLOT_NEXUS;
+			m0_dtm_local_remote_init_alt(&remote_sibling[i][j],
+						 &dtm_remote[j],
+						 &dtm_remote[i],
+						 NULL);
+		}
 	}
 	for (i = 0; i < UPDATE_NR; ++i) {
 		struct m0_dtm_history *history = &history_local[i];
@@ -238,6 +253,7 @@ static void fini0(void)
 					       &m0_dtm_dtx_srv_htype);
 		m0_dtm_history_type_deregister(&dtm_remote[i],
 					       &m0_dtm_fol_remote_htype);
+		m0_dtm_history_type_deregister(&dtm_remote[i], &m0_dtm_dtx_htype);
 		m0_dtm_fini(&dtm_remote[i]);
 	}
 	m0_dtm_history_type_deregister(&dtm_local, &m0_dtm_dtx_htype);
@@ -251,13 +267,16 @@ static void init1(void)
 	int result;
 
 	init0();
-	result = m0_dtm_dtx_init(&dx, &M0_UINT128(0, 0), &dtm_local, REM_NR);
+	// result = m0_dtm_dtx_init(&dx, &M0_UINT128(0, 0), &dtm_local, REM_NR);
+	// M0_UT_ASSERT(result == 0);
+	result = m0_dtm_slot_dtx0_init(&dtx0, NULL, NULL, NULL);
 	M0_UT_ASSERT(result == 0);
 }
 
 static void fini1(void)
 {
-	m0_dtm_dtx_fini(&dx);
+	// m0_dtm_dtx_fini(&dx);
+	m0_dtm_slot_dtx0_fini(&dtx0);
 	fini0();
 }
 
@@ -277,7 +296,8 @@ static void init2(void)
 					       M0_DUR_INC, 2 + i, 1 + i));
 		}
 		dtm_unlock(&dtm_local);
-		m0_dtm_dtx_add(&dx, &oper_local[i]);
+		m0_dtm_slot_dtx0_add(&dtx0, &oper_local[i]);
+		// m0_dtm_dtx_add(&dx, &oper_local[i]);
 		m0_dtm_oper_close(&oper_local[i]);
 		M0_UT_ASSERT(op_state(&oper_local[i].oprt_op, M0_DOS_PREPARE));
 		for (j = 0; j < REM_NR; ++j)
@@ -286,7 +306,8 @@ static void init2(void)
 		M0_UT_ASSERT(op_state(&oper_local[i].oprt_op,
 				      M0_DOS_INPROGRESS));
 	}
-	m0_dtm_dtx_close(&dx);
+	// m0_dtm_dtx_close(&dx);
+	m0_dtm_slot_dtx0_close(&dtx0);
 }
 
 static void fini2(void)
@@ -332,6 +353,7 @@ static void init4(void)
 {
 	int  i;
 	int  j;
+	int  k;
 	bool progress;
 	int  done = 0;
 
@@ -349,10 +371,26 @@ static void init4(void)
 				}
 				if (op_state(&oper->oprt_op, M0_DOS_PREPARE)) {
 					m0_dtm_oper_prepared(oper, NULL);
+					for (k = 0; k < REM_NR; ++k) {
+						if (k == i) {
+							continue;
+						}
+						m0_dtm_oper_prepared(oper,
+							    &remote_sibling[i][k].lre_rem);
+					}
+					m0_dtm_oper_prepared(oper,
+						    &remote_remote[i].lre_rem);
 					progress = true;
 				}
 				if (op_state(&oper->oprt_op, M0_DOS_INPROGRESS)) {
 					m0_dtm_oper_done(oper, NULL);
+					for (k = 0; k < REM_NR; ++k) {
+						if (k == i) {
+							continue;
+						}
+						m0_dtm_oper_done(oper,
+							    &remote_sibling[i][k].lre_rem);
+					}
 					m0_dtm_oper_done(oper,
 						    &remote_remote[i].lre_rem);
 					progress = true;
@@ -361,6 +399,12 @@ static void init4(void)
 			}
 		}
 	} while (progress && done < OPER_NR);
+
+	for (i = 0; i < OPER_NR; ++i) {
+		M0_UT_ASSERT(op_state(&oper_local[i].oprt_op,
+				      M0_DOS_INPROGRESS));
+	}
+
 	for (i = 0; i < REM_NR; ++i) {
 		for (j = 0; j < OPER_NR; ++j) {
 			struct m0_dtm_oper *oper = &oper_remote[i][j];
@@ -395,15 +439,32 @@ static void fini4(void)
 static void init5(void)
 {
 	int i;
+	int j;
 
 	init4();
 	for (i = 0; i < REM_NR; ++i) {
-		M0_UT_ASSERT(dx.dt_nr_fixed == i);
+		// M0_UT_ASSERT(dx.dt_nr_fixed == i);
+		M0_UT_ASSERT(dtx0.d0_nr_fixed == i);
 		m0_dtm_history_persistent(&dtm_remote[i].d_fol.fo_ch.ch_history,
 					  ~0ULL);
-		M0_UT_ASSERT(dx.dt_nr_fixed == i + 1);
+		// M0_UT_ASSERT(dx.dt_nr_fixed == i + 1);
+		M0_UT_ASSERT(dtx0.d0_nr_fixed == i + 1);
 	}
-	M0_UT_ASSERT(dx.dt_nr_fixed == dx.dt_nr);
+	// M0_UT_ASSERT(dx.dt_nr_fixed == dx.dt_nr);
+	M0_UT_ASSERT(dtx0.d0_nr_fixed == dtx0.d0_nr_slots);
+
+	for (j = 0; j < OPER_NR; ++j) {
+		M0_UT_ASSERT(op_state(&oper_local[j].oprt_op,
+				      M0_DOS_PERSISTENT));
+	}
+
+	for (i = 0; i < REM_NR; ++i) {
+		for (j = 0; j < OPER_NR; ++j) {
+			M0_UT_ASSERT(op_state(&oper_remote[i][j].oprt_op,
+					      M0_DOS_PERSISTENT));
+		}
+	}
+
 }
 
 static void fini5(void)
@@ -411,55 +472,55 @@ static void fini5(void)
 	fini4();
 }
 
-static void dtm_setup(void)
+static void dtm0_setup(void)
 {
 	init0();
 	fini0();
 }
 
-static void dtx_setup(void)
+static void dtx0_setup(void)
 {
 	init1();
 	fini1();
 }
 
-static void dtx_populate(void)
+static void dtx0_populate(void)
 {
 	init2();
 	fini2();
 }
 
-static void dtx_pack(void)
+static void dtx0_pack(void)
 {
 	init3();
 	fini3();
 }
 
-static void dtx_reply(void)
+static void dtx0_reply(void)
 {
 	init4();
 	fini4();
 }
 
-static void dtx_fix(void)
+static void dtx0_fix(void)
 {
 	init5();
 	fini5();
 }
 
-struct m0_ut_suite dtm_dtx_ut = {
-	.ts_name = "dtm-dtx-ut",
+struct m0_ut_suite dtm_dtx0_ut = {
+	.ts_name = "dtm-dtx0-ut",
 	.ts_tests = {
-		{ "dtm-setup",    dtm_setup     },
-		{ "dtx-setup",    dtx_setup     },
-		{ "dtx-populate", dtx_populate  },
-		{ "dtx-pack",     dtx_pack      },
-		{ "dtx-reply",    dtx_reply     },
-		{ "dtx-fix",      dtx_fix       },
+		{ "dtm0-setup",    dtm0_setup     },
+		{ "dtx0-setup",    dtx0_setup     },
+		{ "dtx0-populate", dtx0_populate  },
+		{ "dtx0-pack",     dtx0_pack      },
+		{ "dtx0-reply",    dtx0_reply     },
+		{ "dtx0-fix",      dtx0_fix       },
 		{ NULL, NULL }
 	}
 };
-M0_EXPORTED(dtm_dtx_ut);
+M0_EXPORTED(dtm_dtx0_ut);
 
 #undef M0_TRACE_SUBSYSTEM
 

@@ -40,6 +40,7 @@ struct m0_dtm_update;
 struct m0_dtm_update_ops;
 struct m0_dtm_update_type;
 struct m0_dtm_update_descr;
+struct m0_dtm_remote;
 
 /* import */
 struct m0_dtm_history_type;
@@ -126,7 +127,8 @@ M0_INTERNAL void m0_dtm_update_init(struct m0_dtm_update *update,
 				    const struct m0_dtm_update_data *data);
 M0_INTERNAL bool m0_dtm_update_is_user(const struct m0_dtm_update *update);
 M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
-				    struct m0_dtm_update_descr *updd);
+				    struct m0_dtm_update_descr *updd,
+				    struct m0_dtm_remote *remote);
 M0_INTERNAL void m0_dtm_update_unpack(struct m0_dtm_update *update,
 				      const struct m0_dtm_update_descr *updd);
 M0_INTERNAL int m0_dtm_update_build(struct m0_dtm_update *update,

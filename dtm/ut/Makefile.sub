@@ -1,4 +1,5 @@
 ut_libmotr_ut_la_SOURCES += \
                             dtm/ut/dtx.c \
+                            dtm/ut/dtx0.c \
                             dtm/ut/nucleus.c \
                             dtm/ut/transmit.c

@@ -718,7 +718,7 @@ static void redo_test(void)
 	m0_semaphore_fini(&seq);
 	m0_semaphore_init(&seq, 0);
 
-	m0_dtm_history_reset(&tgt.lre_rem.re_fol.rfo_ch.ch_history, 2);
+	m0_dtm_history_reset(&M0_DTM_REM_FOL(&tgt.lre_rem)->rfo_ch.ch_history, 2);
 	/* wait until all foms start execution. */
 	for (i = 0; i < OPER_NR; ++i)
 		m0_semaphore_down(&seq);

@@ -96,6 +96,9 @@ struct m0_dtm_history_type_ops {
 			 const struct m0_dtm_history_type *ht,
 			 const struct m0_uint128 *id,
 			 struct m0_dtm_history **out);
+	int (*hito_to_rem)(struct m0_dtm_update *update,
+			   struct m0_dtm_remote *remote,
+			   uint8_t *out_rem_id);
 };
 
 struct m0_dtm_controlh {
@@ -143,6 +146,9 @@ M0_INTERNAL void m0_dtm_history_add_nop(struct m0_dtm_history *history,
 M0_INTERNAL void m0_dtm_history_add_close(struct m0_dtm_history *history,
 					  struct m0_dtm_oper *oper,
 					  struct m0_dtm_update *cupdate);
+M0_INTERNAL void m0_dtm_controlh_add_static(struct m0_dtm_controlh *ch,
+					    struct m0_dtm_oper *oper,
+					    struct m0_dtm_update *storage);
 
 M0_INTERNAL void m0_dtm_controlh_init(struct m0_dtm_controlh *ch,
 				      struct m0_dtm *dtm);

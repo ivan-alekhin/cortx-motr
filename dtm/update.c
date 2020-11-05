@@ -91,10 +91,12 @@ M0_INTERNAL bool m0_dtm_update_is_user(const struct m0_dtm_update *update)
 }
 
 M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
-				    struct m0_dtm_update_descr *updd)
+				    struct m0_dtm_update_descr *updd,
+				    struct m0_dtm_remote *remote)
 {
 	const struct m0_dtm_up *up      = &update->upd_up;
 	struct m0_dtm_history  *history = UPDATE_HISTORY(update);
+	int rc;
 
 	M0_PRE(m0_dtm_update_invariant(update));
 	M0_PRE(update->upd_up.up_state >= M0_DOS_FUTURE);
@@ -108,6 +110,14 @@ M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
 		}
 	};
 	m0_dtm_history_pack(history, &updd->udd_id);
+
+	if (history->h_ops->hio_type->hit_rem_id == 0) {
+		rc = history->h_ops->hio_type->hit_ops->hito_to_rem(
+							   (struct m0_dtm_update *) update,
+							   remote,
+							   &updd->udd_id.hid_htype);
+		M0_ASSERT(rc == 0);
+	}
 }
 
 M0_INTERNAL void m0_dtm_update_unpack(struct m0_dtm_update *update,

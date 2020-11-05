@@ -40,6 +40,7 @@
 
 /* import */
 #include "dtm/fol.h"
+#include "dtm/slot.h"
 struct m0_dtm_oper;
 struct m0_dtm_update;
 struct m0_rpc_conn;
@@ -51,12 +52,62 @@ struct m0_dtm_remote;
 struct m0_dtm_rpc_remote;
 struct m0_dtm_remote_ops;
 
+enum m0_dtm_remote_type {
+	/* deprecated: remote fol for client-server interactions */
+	M0_DRT_FOL = 0,
+
+	/* Owner points to a dependent node (server).
+	 * Owner can be created only on the side that owns
+	 * the corresponding slot history (client).
+	 */
+	M0_DRT_SLOT_OWNER,
+
+	/* Each dependent (from the perspective of slot ownership)
+	 * node has a connection to the other nodes of such type.
+	 * This kind of connectivity is called nexus (a set of
+	 * nodes that are bound to a nexum).
+	 */
+	M0_DRT_SLOT_NEXUS,
+};
+
 struct m0_dtm_remote {
+	enum m0_dtm_remote_type	        re_type;
 	struct m0_uint128               re_id;
 	uint64_t                        re_instance;
 	const struct m0_dtm_remote_ops *re_ops;
-	struct m0_dtm_fol_remote        re_fol;
+	union {
+		/* Owner (client) always point a pair of slot and remote fol. */
+		struct {
+			struct m0_dtm_slot       slot;
+			struct m0_dtm_fol_remote fol;
+		} owner;
+
+		/* Nexus points to another slot only. */
+		struct {
+			struct m0_dtm_slot       slot;
+		} nexus;
+
+	} re;
 };
+
+#define M0_DTM_REM_FOL(__remote) ({ \
+	M0_ASSERT((__remote)->re_type == M0_DRT_FOL || \
+		  (__remote)->re_type == M0_DRT_SLOT_OWNER); \
+	&(__remote)->re.owner.fol; \
+})
+
+#define M0_DTM_REM_DTM(__remote) ({ \
+	struct m0_dtm *__result; \
+	if ((__remote)->re_type == M0_DRT_FOL || \
+		  (__remote)->re_type == M0_DRT_SLOT_OWNER) { \
+		__result = HISTORY_DTM(&(__remote)->re.owner.fol.rfo_ch.ch_history); \
+	} else { \
+		__result = HISTORY_DTM(&(__remote)->re.nexus.slot.sl_ch.ch_history); \
+	} \
+	M0_ASSERT(__result); \
+	__result; \
+})
+
 
 struct m0_dtm_remote_ops {
 	void (*reo_persistent)(struct m0_dtm_remote *rem,
@@ -104,11 +155,16 @@ struct m0_dtm_notice {
 
 struct m0_dtm_local_remote {
 	struct m0_dtm_remote  lre_rem;
+	struct m0_dtm        *lre_dtm;
 	struct m0_reqh       *lre_reqh;
 };
 
 M0_INTERNAL void m0_dtm_local_remote_init(struct m0_dtm_local_remote *lre,
 					  struct m0_uint128 *id,
+					  struct m0_dtm *local,
+					  struct m0_reqh *reqh);
+M0_INTERNAL void m0_dtm_local_remote_init_alt(struct m0_dtm_local_remote *lre,
+					  struct m0_dtm *remote,
 					  struct m0_dtm *local,
 					  struct m0_reqh *reqh);
 M0_INTERNAL void m0_dtm_local_remote_fini(struct m0_dtm_local_remote *remote);

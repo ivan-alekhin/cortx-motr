@@ -5,6 +5,7 @@ nobase_motr_include_HEADERS += \
                                   dtm/dtm_internal.h \
                                   dtm/dtm_update.h \
                                   dtm/dtx.h \
+                                  dtm/slot.h \
                                   dtm/factory.h \
                                   dtm/fol.h \
                                   dtm/history.h \
@@ -23,6 +24,7 @@ motr_libmotr_la_SOURCES  += \
                                   dtm/domain.c \
                                   dtm/dtm.c \
                                   dtm/dtx.c \
+                                  dtm/slot.c \
                                   dtm/factory.c \
                                   dtm/fol.c \
                                   dtm/history.c \

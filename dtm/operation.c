@@ -163,17 +163,22 @@ M0_INTERNAL void m0_dtm_oper_pack(struct m0_dtm_oper *oper,
 				  struct m0_dtm_oper_descr *ode)
 {
 	uint32_t idx = 0;
+	bool is_target;
 
 	M0_PRE(oper->oprt_flags & M0_DOF_CLOSED);
 	oper_lock(oper);
 	M0_PRE(m0_dtm_oper_invariant(oper));
 	oper_for(oper, update) {
-		M0_ASSERT(HISTORY_DTM(&rem->re_fol.rfo_ch.ch_history) ==
+		M0_ASSERT(HISTORY_DTM(&M0_DTM_REM_FOL(rem)->rfo_ch.ch_history) ==
 			  HISTORY_DTM(UPDATE_HISTORY(update)));
-		if (UPDATE_REM(update) == rem) {
+		is_target = UPDATE_REM(update) == rem ||
+			(UPDATE_REM(update)->re_type == M0_DRT_SLOT_OWNER &&
+			 m0_dtm_is_slot_owner_update(update));
+		if (is_target) {
 			M0_ASSERT(idx < ode->od_updates.ou_nr);
 			m0_dtm_update_pack(update,
-					   &ode->od_updates.ou_update[idx++]);
+					   &ode->od_updates.ou_update[idx++],
+					   (struct m0_dtm_remote *) rem);
 		}
 	} oper_endfor;
 	ode->od_updates.ou_nr = idx;
@@ -223,10 +228,14 @@ M0_INTERNAL void m0_dtm_reply_pack(const struct m0_dtm_oper *oper,
 		ud = &request->od_updates.ou_update[i];
 		update = m0_dtm_oper_get(oper, ud->udd_data.da_label);
 		M0_ASSERT(update != NULL);
+		if (UPDATE_HISTORY(update)->h_rem != NULL) {
+			continue;
+		}
 		M0_ASSERT(update->upd_up.up_state >= M0_DOS_VOLATILE);
 		M0_ASSERT(m0_dtm_descr_matches_update(update, ud));
 		M0_ASSERT(j < reply->od_updates.ou_nr);
-		m0_dtm_update_pack(update, &reply->od_updates.ou_update[j++]);
+		m0_dtm_update_pack(update, &reply->od_updates.ou_update[j++],
+				   NULL);
 	}
 	reply->od_updates.ou_nr = j;
 	M0_POST(m0_dtm_oper_invariant(oper));

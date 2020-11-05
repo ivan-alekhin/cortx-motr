@@ -67,7 +67,11 @@ M0_INTERNAL void m0_dtm_remote_add(struct m0_dtm_remote *rem,
 				   struct m0_dtm_history *history,
 				   struct m0_dtm_update *update)
 {
-	m0_dtm_fol_remote_add(&rem->re_fol, oper);
+	/* do not add FOL updates for Nexus connections (with siblings) */
+	if (rem->re_type == M0_DRT_SLOT_NEXUS) {
+		return;
+	}
+	m0_dtm_fol_remote_add(M0_DTM_REM_FOL(rem), oper);
 }
 
 M0_INTERNAL void m0_dtm_remote_init(struct m0_dtm_remote *remote,
@@ -76,12 +80,37 @@ M0_INTERNAL void m0_dtm_remote_init(struct m0_dtm_remote *remote,
 {
 	M0_PRE(!m0_uint128_eq(id, &local->d_id));
 	remote->re_id = *id;
-	m0_dtm_fol_remote_init(&remote->re_fol, local, remote);
+
+	switch (remote->re_type) {
+		case M0_DRT_FOL:
+			m0_dtm_fol_remote_init(M0_DTM_REM_FOL(remote), local, remote);
+			break;
+		case M0_DRT_SLOT_OWNER:
+			m0_dtm_fol_remote_init(M0_DTM_REM_FOL(remote), local, remote);
+			m0_dtm_slot_owner_init(&remote->re.owner.slot, local,
+					       remote);
+			break;
+		case M0_DRT_SLOT_NEXUS:
+			m0_dtm_slot_remote_init(&remote->re.nexus.slot, local,
+						remote);
+			break;
+	}
 }
 
 M0_INTERNAL void m0_dtm_remote_fini(struct m0_dtm_remote *remote)
 {
-	m0_dtm_fol_remote_fini(&remote->re_fol);
+	switch (remote->re_type) {
+		case M0_DRT_FOL:
+			m0_dtm_fol_remote_fini(M0_DTM_REM_FOL(remote));
+			break;
+		case M0_DRT_SLOT_OWNER:
+			m0_dtm_slot_fini(&remote->re.owner.slot);
+			m0_dtm_fol_remote_fini(M0_DTM_REM_FOL(remote));
+			break;
+		case M0_DRT_SLOT_NEXUS:
+			m0_dtm_slot_fini(&remote->re.nexus.slot);
+			break;
+	}
 }
 
 M0_INTERNAL void m0_dtm_rpc_remote_init(struct m0_dtm_rpc_remote *remote,
@@ -229,6 +258,7 @@ static void notice_deliver(struct m0_dtm_notice *notice, struct m0_dtm *dtm)
 			m0_dtm_history_persistent(history, notice->dno_ver);
 			break;
 		case R_FIXED:
+			// history->h_ops->hio_fixed(history);
 			break;
 		case R_RESET:
 			m0_dtm_history_reset(history, notice->dno_ver);
@@ -279,6 +309,15 @@ M0_INTERNAL void m0_dtm_local_remote_init(struct m0_dtm_local_remote *lre,
 	lre->lre_reqh = reqh;
 }
 
+M0_INTERNAL void m0_dtm_local_remote_init_alt(struct m0_dtm_local_remote *lre,
+					  struct m0_dtm *remote,
+					  struct m0_dtm *local,
+					  struct m0_reqh *reqh)
+{
+	m0_dtm_local_remote_init(lre, &remote->d_id, local, reqh);
+	lre->lre_dtm = remote;
+}
+
 M0_INTERNAL void m0_dtm_local_remote_fini(struct m0_dtm_local_remote *lre)
 {
 	m0_dtm_remote_fini(&lre->lre_rem);
@@ -289,9 +328,28 @@ static void rem_local_notify(struct m0_dtm_remote *rem,
 			     m0_dtm_ver_t ver, enum rem_rpc_notification opcode)
 {
 	struct m0_dtm_notice notice;
+	int rc;
+	struct m0_dtm_local_remote *lre;
+	struct m0_dtm *dtm;
 
 	notice_pack(&notice, history, ver, opcode);
-	notice_deliver(&notice, HISTORY_DTM(&rem->re_fol.rfo_ch.ch_history));
+
+	if (history->h_ops->hio_type->hit_rem_id == 0) {
+		rc = history->h_ops->hio_type->hit_ops->hito_to_rem(NULL,
+								    rem,
+								    &notice.dno_id.hid_htype);
+		M0_ASSERT(rc == 0);
+	}
+
+	lre = M0_AMB(lre, rem, lre_rem);
+
+	dtm = lre->lre_dtm;
+
+	if (!dtm) {
+		dtm = M0_DTM_REM_DTM(rem);
+	}
+
+	notice_deliver(&notice, dtm);
 }
 
 static void rem_local_persistent(struct m0_dtm_remote *rem,

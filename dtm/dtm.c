@@ -46,6 +46,8 @@ M0_INTERNAL void m0_dtm_init(struct m0_dtm *dtm, struct m0_uint128 *id)
 	m0_dtm_nu_init(&dtm->d_nu);
 	m0_dtm_history_type_register(dtm, &m0_dtm_fol_htype);
 	m0_dtm_fol_init(&dtm->d_fol, dtm);
+	m0_dtm_slots_init(dtm);
+	m0_dtm_slot_local_init(&dtm->d_slot, dtm);
 	exc_tlist_init(&dtm->d_excited);
 	for (i = 0; i < ARRAY_SIZE(dtm->d_cat); ++i)
 		m0_dtm_catalogue_init(&dtm->d_cat[i]);
@@ -59,7 +61,9 @@ M0_INTERNAL void m0_dtm_fini(struct m0_dtm *dtm)
 		m0_dtm_catalogue_fini(&dtm->d_cat[i]);
 	exc_tlist_fini(&dtm->d_excited);
 	m0_dtm_fol_fini(&dtm->d_fol);
+	m0_dtm_slot_fini(&dtm->d_slot);
 	m0_dtm_history_type_deregister(dtm, &m0_dtm_fol_htype);
+	m0_dtm_slots_fini(dtm);
 	M0_PRE(m0_forall(i, ARRAY_SIZE(dtm->d_htype), dtm->d_htype[i] == NULL));
 	m0_dtm_nu_fini(&dtm->d_nu);
 }

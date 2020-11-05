@@ -1,4 +1,5 @@
 m0ut_objects += \
                 dtm/ut/dtx.o \
+                dtm/ut/dtx0.o \
                 dtm/ut/nucleus.o \
                 dtm/ut/transmit.o
