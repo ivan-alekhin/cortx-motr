@@ -41,11 +41,14 @@
 #include "dtm/remote.h"
 #include "dtm/remote_xc.h"
 
+#include "lib/memory.h"       /* M0_ALLOC_ARR */
+
 enum rem_rpc_notification {
 	R_PERSISTENT = 1,
 	R_FIXED      = 2,
 	R_RESET      = 3,
-	R_UNDO       = 4
+	R_UNDO       = 4,
+	R_REDO       = 5,
 };
 
 static const struct m0_dtm_remote_ops rem_rpc_ops;
@@ -67,6 +70,12 @@ M0_INTERNAL void m0_dtm_remote_add(struct m0_dtm_remote *rem,
 				   struct m0_dtm_history *history,
 				   struct m0_dtm_update *update)
 {
+	/* check if RFOL update is already here */
+	oper_for(oper, u) {
+		if (history == &rem->re_fol.rfo_ch.ch_history) {
+			return;
+		}
+	} oper_endfor;
 	m0_dtm_fol_remote_add(&rem->re_fol, oper);
 }
 
@@ -176,6 +185,32 @@ static void notice_pack(struct m0_dtm_notice *notice,
 	m0_dtm_history_pack(history, &notice->dno_id);
 }
 
+static void notice_pack_adv(struct m0_dtm_notice *notice,
+			    const struct m0_dtm_history *history,
+			    m0_dtm_ver_t ver,
+			    enum rem_rpc_notification opcode,
+			    struct m0_dtm_oper *oper,
+			    struct m0_dtm_remote *rem)
+{
+	struct m0_dtm_oper_descr *op_descr;
+
+	notice->dno_opcode = opcode;
+	notice->dno_ver    = ver;
+	m0_dtm_history_pack(history, &notice->dno_id);
+
+	if (oper) {
+		M0_ASSERT(M0_IN(opcode, (R_PERSISTENT, R_REDO)));
+		op_descr = &notice->dno_op;
+		op_descr->od_updates.ou_nr =
+			oper_tlist_length(&oper->oprt_op.op_ups);
+		M0_ALLOC_ARR(op_descr->od_updates.ou_update,
+			     op_descr->od_updates.ou_nr);
+		M0_ASSERT(op_descr->od_updates.ou_update);
+		m0_dtm_oper_pack_pn(oper, rem, op_descr);
+	}
+}
+
+
 static void rem_rpc_notify(struct m0_dtm_remote *rem,
 			   const struct m0_dtm_history *history,
 			   m0_dtm_ver_t ver, enum rem_rpc_notification opcode)
@@ -226,6 +261,11 @@ static void notice_deliver(struct m0_dtm_notice *notice, struct m0_dtm *dtm)
 	if (result == 0) {
 		switch (notice->dno_opcode) {
 		case R_PERSISTENT:
+			if (notice->dno_op.od_updates.ou_nr &&
+			    history->h_ops->hio_onp) {
+				history->h_ops->hio_onp(history,
+					       &notice->dno_op);
+			}
 			m0_dtm_history_persistent(history, notice->dno_ver);
 			break;
 		case R_FIXED:
@@ -236,6 +276,9 @@ static void notice_deliver(struct m0_dtm_notice *notice, struct m0_dtm *dtm)
 		case R_UNDO:
 			m0_dtm_history_undo(history, notice->dno_ver);
 			break;
+		case R_REDO:
+			m0_dtm_history_redo(history, &notice->dno_op,
+					    notice->dno_is_last);
 		default:
 			M0_LOG(M0_ERROR, "DTM notice: %i.", notice->dno_opcode);
 		}
@@ -270,13 +313,14 @@ static const struct m0_rpc_item_ops rem_rpc_item_redo_ops = {
 };
 
 M0_INTERNAL void m0_dtm_local_remote_init(struct m0_dtm_local_remote *lre,
-					  struct m0_uint128 *id,
+					  struct m0_dtm *rdtm,
 					  struct m0_dtm *local,
 					  struct m0_reqh *reqh)
 {
-	m0_dtm_remote_init(&lre->lre_rem, id, local);
+	m0_dtm_remote_init(&lre->lre_rem, &rdtm->d_id, local);
 	lre->lre_rem.re_ops = &rem_local_ops;
 	lre->lre_reqh = reqh;
+	lre->lre_rdtm = rdtm;
 }
 
 M0_INTERNAL void m0_dtm_local_remote_fini(struct m0_dtm_local_remote *lre)
@@ -286,31 +330,53 @@ M0_INTERNAL void m0_dtm_local_remote_fini(struct m0_dtm_local_remote *lre)
 
 static void rem_local_notify(struct m0_dtm_remote *rem,
 			     const struct m0_dtm_history *history,
-			     m0_dtm_ver_t ver, enum rem_rpc_notification opcode)
+			     m0_dtm_ver_t ver, enum rem_rpc_notification opcode,
+			     struct m0_dtm_oper *op)
 {
 	struct m0_dtm_notice notice;
+	struct m0_dtm_oper_descr *op_pl;
+	struct m0_dtm_local_remote *lre;
+
+	lre = M0_AMB(lre, rem, lre_rem);
 
 	notice_pack(&notice, history, ver, opcode);
-	notice_deliver(&notice, HISTORY_DTM(&rem->re_fol.rfo_ch.ch_history));
+	if (opcode == R_PERSISTENT && op) {
+		op_pl = &notice.dno_op;
+		op_pl->od_updates.ou_nr = oper_tlist_length(&op->oprt_op.op_ups);
+		M0_ALLOC_ARR(op_pl->od_updates.ou_update, op_pl->od_updates.ou_nr);
+		M0_ASSERT(op_pl->od_updates.ou_update);
+		m0_dtm_oper_pack_pn(op, rem, op_pl);
+	}
+
+	notice_deliver(&notice, lre->lre_rdtm);
+
+	if (op_pl) {
+		m0_free(op_pl->od_updates.ou_update);
+	}
 }
 
 static void rem_local_persistent(struct m0_dtm_remote *rem,
 				 struct m0_dtm_history *history)
 {
+	struct m0_dtm_oper *op;
+
+	op = op_oper(UPDATE_UP(history->h_persistent)->up_op);
+	M0_ASSERT(op);
+
 	rem_local_notify(rem, history,
-			 update_ver(history->h_persistent), R_PERSISTENT);
+			 update_ver(history->h_persistent), R_PERSISTENT, op);
 }
 
 static void rem_local_fixed(struct m0_dtm_remote *rem,
 			    struct m0_dtm_history *history)
 {
-	rem_local_notify(rem, history, 0, R_FIXED);
+	rem_local_notify(rem, history, 0, R_FIXED, NULL);
 }
 
 static void rem_local_reset(struct m0_dtm_remote *rem,
 			    struct m0_dtm_history *history)
 {
-	rem_local_notify(rem, history, history->h_hi.hi_ver, R_RESET);
+	rem_local_notify(rem, history, history->h_hi.hi_ver, R_RESET, NULL);
 }
 
 static void rem_local_send(struct m0_dtm_remote *rem,
@@ -328,7 +394,26 @@ static void rem_local_send(struct m0_dtm_remote *rem,
 static void rem_local_undo(struct m0_dtm_remote *rem,
 			   struct m0_dtm_history *history, m0_dtm_ver_t upto)
 {
-	rem_local_notify(rem, history, upto, R_UNDO);
+	rem_local_notify(rem, history, upto, R_UNDO, NULL);
+}
+
+static void rem_local_redo_send(struct m0_dtm_remote *rem,
+			 struct m0_dtm_history *history,
+			 struct m0_dtm_oper *oper,
+			 bool is_last)
+{
+	struct m0_dtm_notice notice;
+	struct m0_dtm_local_remote *lre;
+
+	M0_SET0(&notice);
+	lre = M0_AMB(lre, rem, lre_rem);
+
+	notice_pack_adv(&notice, history, 0, R_REDO, oper, rem);
+	notice_deliver(&notice, lre->lre_rdtm);
+
+	if (notice.dno_op.od_updates.ou_update) {
+		m0_free(notice.dno_op.od_updates.ou_update);
+	}
 }
 
 
@@ -338,8 +423,41 @@ static const struct m0_dtm_remote_ops rem_local_ops = {
 	.reo_reset      = &rem_local_reset,
 	.reo_send       = &rem_local_send,
 	.reo_resend     = &rem_local_send,
-	.reo_undo       = &rem_local_undo
+	.reo_undo       = &rem_local_undo,
+	.reo_redo_send  = &rem_local_redo_send,
 };
+M0_INTERNAL void m0_dtm_remote_redo(struct m0_dtm_remote *remote)
+{
+	struct m0_dtm_oper    *oper;
+	struct m0_dtm_up      *up;
+	struct m0_dtm_history *history;
+	bool                   has_next;
+
+	M0_PRE(remote);
+
+	history = &remote->re_fol.rfo_ch.ch_history;
+
+	/* Send all operations that contain non-stable updates
+	 * for the RFOL until we reach updates that have not
+	 * been PREPARED yet (not ordered).
+	 */
+	for (up = hi_earliest(&history->h_hi);
+	     up != NULL; up = m0_dtm_up_later(up)) {
+		if (up->up_state == M0_DOS_STABLE) {
+			continue;
+		}
+
+		if (up->up_state < M0_DOS_PREPARE) {
+			break;
+		}
+
+		oper = op_oper(up->up_op);
+		has_next = m0_dtm_up_later(up) != NULL &&
+			m0_dtm_up_later(up)->up_state < M0_DOS_PREPARE;
+		remote->re_ops->reo_redo_send(remote, history, oper, !has_next);
+	}
+}
+
 
 #undef M0_TRACE_SUBSYSTEM
 

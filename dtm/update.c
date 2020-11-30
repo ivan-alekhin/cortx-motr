@@ -90,11 +90,11 @@ M0_INTERNAL bool m0_dtm_update_is_user(const struct m0_dtm_update *update)
 	return update->upd_label >= M0_DTM_USER_UPDATE_BASE;
 }
 
-M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
-				    struct m0_dtm_update_descr *updd)
+/* packs only the update itself without history id */
+static void m0_dtm_update__pack(const struct m0_dtm_update *update,
+				struct m0_dtm_update_descr *updd)
 {
 	const struct m0_dtm_up *up      = &update->upd_up;
-	struct m0_dtm_history  *history = UPDATE_HISTORY(update);
 
 	M0_PRE(m0_dtm_update_invariant(update));
 	M0_PRE(update->upd_up.up_state >= M0_DOS_FUTURE);
@@ -107,7 +107,23 @@ M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
 			.da_orig_ver = up->up_orig_ver
 		}
 	};
+}
+
+M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
+				    struct m0_dtm_update_descr *updd)
+{
+	struct m0_dtm_history  *history = UPDATE_HISTORY(update);
+	m0_dtm_update__pack(update, updd);
 	m0_dtm_history_pack(history, &updd->udd_id);
+}
+
+
+M0_INTERNAL void m0_dtm_update_pack_local(const struct m0_dtm_update *update,
+					  struct m0_dtm_update_descr *updd)
+{
+	struct m0_dtm_history  *history = UPDATE_HISTORY(update);
+	m0_dtm_update__pack(update, updd);
+	m0_dtm_history_pack_local(history, &updd->udd_id);
 }
 
 M0_INTERNAL void m0_dtm_update_unpack(struct m0_dtm_update *update,

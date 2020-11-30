@@ -65,6 +65,40 @@ M0_INTERNAL void m0_dtm_fol_remote_add(struct m0_dtm_fol_remote *frem,
 
 M0_EXTERN const struct m0_dtm_history_type m0_dtm_fol_remote_htype;
 
+
+/* TODO: should we move slot into its own module? */
+
+struct m0_dtm_slot {
+	struct m0_dtm_controlh sl_ch;
+};
+
+M0_INTERNAL void m0_dtm_slot_init(struct m0_dtm_slot *slot, struct m0_dtm *dtm);
+M0_INTERNAL void m0_dtm_slot_fini(struct m0_dtm_slot *slot);
+
+/** Attach an intent slot to a DTM operation. */
+M0_INTERNAL struct m0_dtm_update *m0_dtm_slot_add(struct m0_dtm_slot *slot,
+						  struct m0_dtm_oper *oper);
+
+/* Attach the default slot to a DTM operation */
+M0_INTERNAL struct m0_dtm_update *m0_dtm_slot_add_def(struct m0_dtm *dtm,
+						      struct m0_dtm_oper *oper);
+
+M0_EXTERN const struct m0_dtm_history_type m0_dtm_slot_htype;
+
+
+struct m0_dtm_slot_remote {
+	struct m0_dtm_controlh rs_ch;
+	struct m0_dtm_remote *rs_rem;
+};
+
+M0_INTERNAL void m0_dtm_slot_remote_init(struct m0_dtm_slot_remote *srem,
+					 struct m0_dtm *dtm,
+					 struct m0_dtm_remote *remote);
+M0_INTERNAL void m0_dtm_slot_remote_fini(struct m0_dtm_slot_remote *srem);
+
+M0_EXTERN const struct m0_dtm_history_type m0_dtm_slot_remote_htype;
+
+
 /** @} end of dtm group */
 
 #endif /* __MOTR_DTM_FOL_H__ */

@@ -58,10 +58,12 @@ struct m0_dtm_history {
 	struct m0_tlink                  h_catlink;
 	struct m0_dtm_remote            *h_rem;
 	struct m0_dtm_update            *h_persistent;
+	struct m0_dtm_update            *h_stable;
 	struct m0_dtm_update            *h_undo;
 	struct m0_dtm_update            *h_reint;
 	struct m0_dtm_update            *h_known;
 	struct m0_dtm_update            *h_reset;
+	struct m0_dtm_update            *h_redo;
 	const struct m0_dtm_history_ops *h_ops;
 	uint64_t                         h_gen;
 	uint64_t                         h_epoch;
@@ -75,6 +77,20 @@ enum m0_dtm_history_flags {
 	M0_DHF_AMNESIA
 };
 
+/* Kinds of on-wire messages:
+ *	- request (normal mode)
+ *	- reply (to a request, normal mode)
+ *	- persistent notice (normal mode, to all)
+ *	- redo (recovery mode)
+ */
+enum m0_dtm_update_onwire_kind {
+	M0_DUOWK_REQUEST,
+	M0_DUOWK_REPLY,
+	M0_DUOWK_PERSISTENT,
+	M0_DUOWK_REDO,
+};
+
+
 struct m0_dtm_history_ops {
 	const struct m0_dtm_history_type *hio_type;
 	const struct m0_uint128 *(*hio_id)(const struct m0_dtm_history *history);
@@ -82,6 +98,16 @@ struct m0_dtm_history_ops {
 	void (*hio_fixed     )(struct m0_dtm_history *history);
 	int  (*hio_update    )(struct m0_dtm_history *history, uint8_t id,
 			       struct m0_dtm_update *update);
+	bool (*hio_is_stable )(struct m0_dtm_history *history,
+			       struct m0_dtm_update *update);
+	void (*hio_stable)(struct m0_dtm_history *history);
+
+	void (*hio_onp)(struct m0_dtm_history *history,
+			struct m0_dtm_oper_descr *od);
+
+	void (*hio_to_ow_u)(const struct m0_dtm_update *update,
+			    const struct m0_dtm_remote *remote,
+			    enum m0_dtm_update_onwire_kind how);
 };
 
 struct m0_dtm_history_type {
@@ -91,12 +117,16 @@ struct m0_dtm_history_type {
 	const struct m0_dtm_history_type_ops *hit_ops;
 };
 
+
 struct m0_dtm_history_type_ops {
 	int (*hito_find)(struct m0_dtm *dtm,
 			 const struct m0_dtm_history_type *ht,
 			 const struct m0_uint128 *id,
 			 struct m0_dtm_history **out);
 };
+
+#define HISTORY_HTYPE(_history) \
+	(_history)->h_ops->hio_type
 
 struct m0_dtm_controlh {
 	struct m0_dtm_history ch_history;
@@ -117,6 +147,10 @@ M0_INTERNAL void m0_dtm_history_undo(struct m0_dtm_history *history,
 				     m0_dtm_ver_t upto);
 M0_INTERNAL void m0_dtm_history_close(struct m0_dtm_history *history);
 
+M0_INTERNAL void m0_dtm_history_redo(struct m0_dtm_history *history,
+				     struct m0_dtm_oper_descr *op_descr,
+				     bool is_last);
+
 M0_INTERNAL void m0_dtm_history_update_get(const struct m0_dtm_history *history,
 					   enum m0_dtm_up_rule rule,
 					   struct m0_dtm_update_data *data);
@@ -133,6 +167,9 @@ m0_dtm_history_type_find(struct m0_dtm *dtm, uint8_t id);
 M0_INTERNAL void m0_dtm_history_pack(const struct m0_dtm_history *history,
 				     struct m0_dtm_history_id *id);
 
+M0_INTERNAL void m0_dtm_history_pack_local(const struct m0_dtm_history *history,
+					   struct m0_dtm_history_id *id);
+
 M0_INTERNAL int m0_dtm_history_unpack(struct m0_dtm *dtm,
 				      const struct m0_dtm_history_id *id,
 				      struct m0_dtm_history **out);
@@ -147,8 +184,8 @@ M0_INTERNAL void m0_dtm_history_add_close(struct m0_dtm_history *history,
 M0_INTERNAL void m0_dtm_controlh_init(struct m0_dtm_controlh *ch,
 				      struct m0_dtm *dtm);
 M0_INTERNAL void m0_dtm_controlh_fini(struct m0_dtm_controlh *ch);
-M0_INTERNAL void m0_dtm_controlh_add(struct m0_dtm_controlh *ch,
-				     struct m0_dtm_oper *oper);
+M0_INTERNAL struct m0_dtm_update *m0_dtm_controlh_add(struct m0_dtm_controlh *ch,
+						      struct m0_dtm_oper *oper);
 M0_INTERNAL void m0_dtm_controlh_close(struct m0_dtm_controlh *ch);
 M0_INTERNAL int m0_dtm_controlh_update(struct m0_dtm_history *history,
 				       uint8_t id,

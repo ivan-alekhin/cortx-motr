@@ -74,7 +74,17 @@ enum m0_dtm_hi_flags {
 	M0_DHF_FULL   = 1ULL << 1,
 	M0_DHF_OWNED  = 1ULL << 2,
 	M0_DHF_BUSY   = 1ULL << 3,
-	M0_DHF_LAST   = 1ULL << 4
+	/* An update for a history with EAGER flag set are
+	 * allowed to enter VOLATILE state even if they have
+	 * unresolved UNK versions.
+	 * TODO: The following statement should be converted
+	 * into a condition for ::m0_dtm_history invariant:
+	 * An implementation of such a history is supposed
+	 * to provide a callback used by DTM to update the persistent
+	 * record of the operation the opdate is part of.
+	 */
+	M0_DHF_EAGER  = 1ULL << 4,
+	M0_DHF_LAST   = 1ULL << 5
 };
 
 struct m0_dtm_hi_ops {

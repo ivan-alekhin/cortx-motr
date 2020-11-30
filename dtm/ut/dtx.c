@@ -39,17 +39,18 @@
 #include "dtm/remote.h"
 
 enum {
-	OPER_NR   =  3,
-	UPDATE_NR = 15,
-	REM_NR    =  7,
+	OPER_NR   = 1,
+	UPDATE_NR = 3,
+	REM_NR    = 3,
 	DTM_NR    = REM_NR + 1,
-	FAN_NR    = UPDATE_NR/REM_NR + 1 + 2
+	FAN_NR    = 9, /* FAN_NR >= UPDATE_NR/REM_NR + 1 + 2 */
 };
 
 static struct m0_dtm              dtm_local;
 static struct m0_dtm              dtm_remote[REM_NR];
 static struct m0_dtm_local_remote remote_local[REM_NR];
 static struct m0_dtm_local_remote remote_remote[REM_NR];
+static struct m0_dtm_local_remote remote_sibling[REM_NR][REM_NR];
 static struct m0_dtm_dtx          dx;
 static struct m0_dtm_history      history0[UPDATE_NR * DTM_NR];
 static struct m0_dtm_update       control_local[OPER_NR][2*DTM_NR];
@@ -152,6 +153,24 @@ static const struct m0_dtm_history_ops hops = {
 	.hio_update     = &update_init
 };
 
+#define for_all_siblings(_i, _j)			\
+	for (_i = 0; _i < REM_NR; ++_i) {		\
+		for (_j = 0; _j < REM_NR; ++_j) {	\
+			if (_i != _j)
+
+#define endfor_all_siblings()	\
+		}		\
+	}			\
+	do {} while (0)
+
+#define for_my_siblings(_i, _j)			\
+	for (_j = 0; _j < REM_NR; ++_j) {	\
+		if (_i != _j)			\
+
+#define endfor_my_siblings()	\
+	}			\
+	do {} while (0)
+
 static void init0(void)
 {
 	int          i;
@@ -180,10 +199,23 @@ static void init0(void)
 		m0_dtm_history_type_register(&dtm_remote[i],
 					     &m0_dtm_fol_remote_htype);
 		m0_dtm_local_remote_init(&remote_local[i],
-					 &dtm_remote[i].d_id, &dtm_local, NULL);
+					 &dtm_remote[i], &dtm_local, NULL);
 		m0_dtm_local_remote_init(&remote_remote[i],
-					 &dtm_local.d_id, &dtm_remote[i], NULL);
+					 &dtm_local, &dtm_remote[i], NULL);
+		m0_dtm_slot_remote_init(&remote_remote[i].lre_rem.re_slot,
+					&dtm_remote[i],
+					&remote_remote[i].lre_rem);
 	}
+	/* Connect server FOls together */
+	for_all_siblings(i, j) {
+		/* connect i -> j */
+		m0_dtm_local_remote_init(&remote_sibling[i][j],
+					 &dtm_remote[j], &dtm_remote[i],
+					 NULL);
+		/* TODO: local_remote_init should have special flag for that */
+		remote_sibling[i][j].lre_rem.re_fol.rfo_ch.ch_history.h_hi.hi_flags |=
+			M0_DHF_EAGER;
+	} endfor_all_siblings();
 	for (i = 0; i < UPDATE_NR; ++i) {
 		struct m0_dtm_history *history = &history_local[i];
 
@@ -230,9 +262,14 @@ static void fini0(void)
 	for (i = 0; i < UPDATE_NR; ++i)
 		m0_dtm_history_fini(&history_local[i]);
 
+	for_all_siblings(i, j) {
+		/* connect i -> j */
+		m0_dtm_local_remote_fini(&remote_sibling[i][j]);
+	} endfor_all_siblings();
 	for (i = 0; i < ARRAY_SIZE(dtm_remote); ++i) {
 		m0_dtm_local_remote_fini(&remote_remote[i]);
 		m0_dtm_local_remote_fini(&remote_local[i]);
+		m0_dtm_slot_remote_fini(&remote_remote[i].lre_rem.re_slot);
 		m0_dtm_history_type_deregister(&dtm_remote[i], &htype);
 		m0_dtm_history_type_deregister(&dtm_remote[i],
 					       &m0_dtm_dtx_srv_htype);
@@ -283,6 +320,7 @@ static void init2(void)
 		for (j = 0; j < REM_NR; ++j)
 			m0_dtm_oper_prepared(&oper_local[i],
 					     &remote_local[j].lre_rem);
+			m0_dtm_oper_prepared(&oper_local[i], NULL);
 		M0_UT_ASSERT(op_state(&oper_local[i].oprt_op,
 				      M0_DOS_INPROGRESS));
 	}
@@ -332,6 +370,7 @@ static void init4(void)
 {
 	int  i;
 	int  j;
+	int  k;
 	bool progress;
 	int  done = 0;
 
@@ -349,12 +388,20 @@ static void init4(void)
 				}
 				if (op_state(&oper->oprt_op, M0_DOS_PREPARE)) {
 					m0_dtm_oper_prepared(oper, NULL);
+					for_my_siblings(i, k) {
+						m0_dtm_oper_prepared(oper,
+						 &remote_sibling[i][k].lre_rem);
+					} endfor_my_siblings();
 					progress = true;
 				}
 				if (op_state(&oper->oprt_op, M0_DOS_INPROGRESS)) {
 					m0_dtm_oper_done(oper, NULL);
 					m0_dtm_oper_done(oper,
 						    &remote_remote[i].lre_rem);
+					for_my_siblings(i, k) {
+						m0_dtm_oper_done(oper,
+						 &remote_sibling[i][k].lre_rem);
+					} endfor_my_siblings();
 					progress = true;
 					done++;
 				}
@@ -372,6 +419,9 @@ static void init4(void)
 			m0_dtm_reply_unpack(loper, &ode_reply[i][j]);
 			m0_dtm_oper_done(loper, &remote_local[i].lre_rem);
 		}
+	}
+	for (i = 0; i < OPER_NR; ++i) {
+		m0_dtm_oper_done(&oper_local[i], NULL);
 	}
 	M0_UT_ASSERT(m0_forall(i, OPER_NR, op_state(&oper_local[i].oprt_op,
 						    M0_DOS_VOLATILE)));
@@ -404,6 +454,15 @@ static void init5(void)
 		M0_UT_ASSERT(dx.dt_nr_fixed == i + 1);
 	}
 	M0_UT_ASSERT(dx.dt_nr_fixed == dx.dt_nr);
+
+	for (i = 0; i < REM_NR; ++i) {
+		M0_UT_ASSERT(m0_forall(j, OPER_NR,
+				       op_state(&oper_remote[i][j].oprt_op,
+							    M0_DOS_STABLE)));
+	}
+
+	M0_UT_ASSERT(m0_forall(i, OPER_NR, op_state(&oper_local[i].oprt_op,
+						    M0_DOS_STABLE)));
 }
 
 static void fini5(void)
@@ -447,15 +506,22 @@ static void dtx_fix(void)
 	fini5();
 }
 
+static void dtx_fix_twice(void)
+{
+	dtx_fix();
+	dtx_fix();
+}
+
 struct m0_ut_suite dtm_dtx_ut = {
 	.ts_name = "dtm-dtx-ut",
 	.ts_tests = {
-		{ "dtm-setup",    dtm_setup     },
-		{ "dtx-setup",    dtx_setup     },
-		{ "dtx-populate", dtx_populate  },
-		{ "dtx-pack",     dtx_pack      },
-		{ "dtx-reply",    dtx_reply     },
-		{ "dtx-fix",      dtx_fix       },
+		{ "dtm-setup",     dtm_setup      },
+		{ "dtx-setup",     dtx_setup      },
+		{ "dtx-populate",  dtx_populate   },
+		{ "dtx-pack",      dtx_pack       },
+		{ "dtx-reply",     dtx_reply      },
+		{ "dtx-fix",       dtx_fix        },
+		{ "dtx-fix-twice", dtx_fix_twice  },
 		{ NULL, NULL }
 	}
 };

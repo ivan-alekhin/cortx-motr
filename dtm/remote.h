@@ -37,6 +37,7 @@
 #include "xcode/xcode_attr.h"
 #include "dtm/update.h"              /* m0_dtm_history_id */
 #include "dtm/update_xc.h"           /* m0_dtm_history_id_xc */
+#include "dtm/operation_xc.h"             /* oper_descr */
 
 /* import */
 #include "dtm/fol.h"
@@ -56,6 +57,7 @@ struct m0_dtm_remote {
 	uint64_t                        re_instance;
 	const struct m0_dtm_remote_ops *re_ops;
 	struct m0_dtm_fol_remote        re_fol;
+	struct m0_dtm_slot_remote       re_slot;
 };
 
 struct m0_dtm_remote_ops {
@@ -71,6 +73,10 @@ struct m0_dtm_remote_ops {
 			 struct m0_dtm_update *update);
 	void (*reo_resend)(struct m0_dtm_remote *rem,
 			   struct m0_dtm_update *update);
+	void (*reo_redo_send)(struct m0_dtm_remote *rem,
+			      struct m0_dtm_history *history,
+			      struct m0_dtm_oper *oper,
+			      bool is_last);
 };
 
 M0_INTERNAL void m0_dtm_remote_init(struct m0_dtm_remote *remote,
@@ -100,15 +106,18 @@ struct m0_dtm_notice {
 	struct m0_dtm_history_id dno_id;
 	uint64_t                 dno_ver;
 	uint8_t                  dno_opcode;
+	uint8_t                  dno_is_last; /* for REDO */
+	struct m0_dtm_oper_descr dno_op;
 } M0_XCA_RECORD M0_XCA_DOMAIN(rpc);
 
 struct m0_dtm_local_remote {
 	struct m0_dtm_remote  lre_rem;
 	struct m0_reqh       *lre_reqh;
+	struct m0_dtm        *lre_rdtm;
 };
 
 M0_INTERNAL void m0_dtm_local_remote_init(struct m0_dtm_local_remote *lre,
-					  struct m0_uint128 *id,
+					  struct m0_dtm *rdtm,
 					  struct m0_dtm *local,
 					  struct m0_reqh *reqh);
 M0_INTERNAL void m0_dtm_local_remote_fini(struct m0_dtm_local_remote *remote);

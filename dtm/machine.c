@@ -46,6 +46,8 @@ static void sibling_undo      (struct m0_dtm_history *history,
 			       struct m0_dtm_op *op);
 static void sibling_persistent(struct m0_dtm_history *history,
 			       struct m0_dtm_op *op);
+static void sibling_stable(struct m0_dtm_history *history,
+			   struct m0_dtm_op *op);
 static void sibling_reset     (struct m0_dtm_history *history,
 			       struct m0_dtm_op *op);
 
@@ -72,6 +74,29 @@ M0_INTERNAL void m0_dtm_undo_done(struct m0_dtm_update *update)
 	m0_dtm_history_balance(UPDATE_HISTORY(update));
 }
 
+static bool try_stab(struct m0_dtm_history *history,
+		     struct m0_dtm_update *update)
+{
+	bool is_stable;
+
+	M0_PRE(history->h_stable == NULL);
+
+	if (history->h_ops->hio_is_stable) {
+		/* A custom stability detector */
+		is_stable = history->h_ops->hio_is_stable(history, update);
+	} else {
+		/* Default detector: all updates are persistent */
+		is_stable = op_state(UPDATE_UP(update)->up_op,
+				     M0_DOS_PERSISTENT);
+	}
+
+	if (is_stable) {
+		history->h_stable = update;
+	}
+
+	return is_stable;
+}
+
 static void history_balance(struct m0_dtm_history *history)
 {
 	bool                  more = false;
@@ -94,11 +119,21 @@ static void history_balance(struct m0_dtm_history *history)
 	}
 	if (history->h_persistent != NULL) {
 		up = UPDATE_UP(history->h_persistent);
+		/* XXX: This loop works only for FOL-like histories.
+		 * In general case, the updates prior the specified
+		 * update may not be persistent yet (if they do not support
+		 * the "persistent-upto" semantic). This may affect
+		 * slot or DTX histories.
+		 */
 		do {
 			if (up->up_state >= M0_DOS_PERSISTENT)
 				break;
 			up->up_state = M0_DOS_PERSISTENT;
 			sibling_persistent(history, up->up_op);
+			if (m0_dtm_up_prior(up) == NULL ||
+			    m0_dtm_up_prior(up)->up_state == M0_DOS_STABLE) {
+				more = try_stab(history, up_update(up));
+			}
 			up = m0_dtm_up_prior(up);
 		} while (up != NULL);
 		if (up_ver(up) != update_ver(history->h_persistent))
@@ -107,6 +142,22 @@ static void history_balance(struct m0_dtm_history *history)
 		    m0_dtm_up_later(&history->h_persistent->upd_up) == NULL)
 			history->h_ops->hio_fixed(history);
 		history->h_persistent = NULL;
+	} else if (history->h_stable != NULL) {
+		up = UPDATE_UP(history->h_stable);
+		M0_ASSERT(up->up_state == M0_DOS_PERSISTENT);
+		M0_ASSERT(ergo(m0_dtm_up_prior(up),
+			       m0_dtm_up_prior(up)->up_state == M0_DOS_STABLE));
+		up->up_state = M0_DOS_STABLE;
+		sibling_stable(history, up->up_op);
+		if (history->h_ops->hio_stable) {
+			history->h_ops->hio_stable(history);
+		}
+		history->h_stable = NULL;
+		/* propagate S later */
+		if (m0_dtm_up_later(up) &&
+		    m0_dtm_up_later(up)->up_state == M0_DOS_PERSISTENT) {
+			more = try_stab(history, up_update(m0_dtm_up_later(up)));
+		}
 	}
 	if (history->h_reset != NULL) {
 		up = UPDATE_UP(history->h_reset);
@@ -155,6 +206,22 @@ static void sibling_undo(struct m0_dtm_history *history, struct m0_dtm_op *op)
 		}
 	} up_endfor;
 }
+
+static void sibling_stable(struct m0_dtm_history *history,
+			       struct m0_dtm_op *op)
+{
+	up_for(op, up) {
+		struct m0_dtm_history *other  = UP_HISTORY(up);
+		struct m0_dtm_update  *update = up_update(up);
+
+		M0_ASSERT(up->up_state >= M0_DOS_PERSISTENT);
+		if (up->up_state == M0_DOS_PERSISTENT) {
+			other->h_stable = update;
+			history_excite(other);
+		}
+	} up_endfor;
+}
+
 
 static void sibling_persistent(struct m0_dtm_history *history,
 			       struct m0_dtm_op *op)

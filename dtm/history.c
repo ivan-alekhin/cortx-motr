@@ -159,6 +159,13 @@ M0_INTERNAL void m0_dtm_history_undo(struct m0_dtm_history *history,
 	history_unlock(history);
 }
 
+M0_INTERNAL void m0_dtm_history_redo(struct m0_dtm_history *history,
+				     struct m0_dtm_oper_descr *op_descr,
+				     bool is_last)
+{
+	M0_IMPOSSIBLE("Not implemented yet");
+}
+
 M0_INTERNAL void m0_dtm_history_close(struct m0_dtm_history *history)
 {
 	history_lock(history);
@@ -245,6 +252,15 @@ M0_INTERNAL void m0_dtm_history_pack(const struct m0_dtm_history *history,
 	m0_cookie_init(&id->hid_sender, &history->h_gen);
 }
 
+M0_INTERNAL void m0_dtm_history_pack_local(const struct m0_dtm_history *history,
+					   struct m0_dtm_history_id *id)
+{
+	id->hid_id       = *history->h_ops->hio_id(history);
+	id->hid_htype    =  history->h_ops->hio_type->hit_id;
+	id->hid_receiver =  (struct m0_cookie) { 0 };
+	id->hid_sender =  (struct m0_cookie) { 0 };
+}
+
 M0_INTERNAL int m0_dtm_history_unpack(struct m0_dtm *dtm,
 				      const struct m0_dtm_history_id *id,
 				      struct m0_dtm_history **out)
@@ -258,10 +274,17 @@ M0_INTERNAL int m0_dtm_history_unpack(struct m0_dtm *dtm,
 
 	/* !m0_cookie_is_null() && */
 	*out = m0_cookie_of(&id->hid_receiver, struct m0_dtm_history, h_gen);
-	result = *out != NULL ? 0 :
+	/* TODO: This optimization is disabled to make local remote
+	 * work correctly. Since local and remote DTM instances are
+	 * in the same memory space, m0_cookie works wrong.
+	 * Modify the code that sends PERSISTENT notices in a way
+	 * that it it removes the cookies from the notices.
+	 */
+	result = /* *out != NULL ? 0 : */
 		htype->hit_ops->hito_find(dtm, htype, &id->hid_id, out);
 	if (result == 0)
 		(*out)->h_remcookie = id->hid_sender;
+	M0_ASSERT(result == 0);
 	return result;
 }
 
@@ -349,13 +372,15 @@ M0_INTERNAL void m0_dtm_controlh_close(struct m0_dtm_controlh *ch)
 	m0_dtm_oper_prepared(&ch->ch_clop, ch->ch_history.h_rem);
 }
 
-M0_INTERNAL void m0_dtm_controlh_add(struct m0_dtm_controlh *ch,
-				     struct m0_dtm_oper *oper)
+M0_INTERNAL struct m0_dtm_update *m0_dtm_controlh_add(struct m0_dtm_controlh *ch,
+						      struct m0_dtm_oper *oper)
 {
 	struct m0_dtm_update *update = oper_tlist_pop(&oper->oprt_uu);
 
 	M0_PRE(update != NULL);
 	m0_dtm_history_add_nop(&ch->ch_history, oper, update);
+
+	return update;
 }
 
 enum {

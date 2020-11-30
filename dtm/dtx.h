@@ -36,7 +36,10 @@
 /* import */
 #include "lib/types.h"                /* m0_uint128, uint32_t, uint64_t */
 struct m0_dtm_dtx_party;
+struct m0_dtm_dtx0_pa;
 struct m0_dtm;
+struct m0_dtm_slot;
+struct m0_dtm_update;
 
 /* export */
 struct m0_dtm_dtx;
@@ -48,6 +51,8 @@ struct m0_dtm_dtx {
 	uint32_t                 dt_nr_max;
 	uint32_t                 dt_nr_fixed;
 	struct m0_dtm_dtx_party *dt_party;
+	struct m0_dtm_slot      *dt_slot;
+	struct m0_dtm_update    *dt_slup;
 };
 
 struct m0_dtm_dtx_srv {
@@ -66,6 +71,14 @@ M0_INTERNAL void m0_dtm_dtx_close(struct m0_dtm_dtx *dtx);
 
 M0_EXTERN const struct m0_dtm_history_type m0_dtm_dtx_htype;
 M0_EXTERN const struct m0_dtm_history_type m0_dtm_dtx_srv_htype;
+
+
+struct m0_dtm_dtx0 {
+	struct m0_dtm *dt_dtm;
+	struct m0_dtm_update *dt_slup;
+	struct m0_dtm_dtx0_pa  *dt_pa;
+	uint64_t dt_nr_pa;
+};
 
 /** @} end of dtm group */
 

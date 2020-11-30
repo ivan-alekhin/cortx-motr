@@ -77,6 +77,9 @@ M0_INTERNAL void m0_dtm_oper_done(const struct m0_dtm_oper *oper,
 M0_INTERNAL void m0_dtm_oper_pack(struct m0_dtm_oper *oper,
 				  const struct m0_dtm_remote *rem,
 				  struct m0_dtm_oper_descr *ode);
+M0_INTERNAL void m0_dtm_oper_pack_pn(struct m0_dtm_oper *oper,
+				     const struct m0_dtm_remote *rem,
+				     struct m0_dtm_oper_descr *ode);
 M0_INTERNAL void m0_dtm_oper_unpack(struct m0_dtm_oper *oper,
 				    const struct m0_dtm_oper_descr *ode);
 M0_INTERNAL int  m0_dtm_oper_build(struct m0_dtm_oper *oper, struct m0_tl *uu,

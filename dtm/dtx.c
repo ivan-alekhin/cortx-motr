@@ -62,6 +62,8 @@ M0_INTERNAL int m0_dtm_dtx_init(struct m0_dtm_dtx *dtx,
 	dtx->dt_dtm = dtm;
 	dtx->dt_nr_max = nr_max;
 	dtx->dt_nr = dtx->dt_nr_fixed = 0;
+	dtx->dt_slot = &dtx->dt_dtm->d_slot;
+	dtx->dt_slup = NULL;
 	M0_ALLOC_ARR(dtx->dt_party, nr_max);
 	return dtx->dt_party == NULL ? -ENOMEM : 0;
 }
@@ -80,10 +82,19 @@ M0_INTERNAL void m0_dtm_dtx_fini(struct m0_dtm_dtx *dtx)
 M0_INTERNAL void m0_dtm_dtx_add(struct m0_dtm_dtx *dtx,
 				struct m0_dtm_oper *oper)
 {
+	/* we have only one slot so far */
+	M0_PRE(dtx->dt_slup == NULL);
+	if (!dtx->dt_slup) {
+		dtx->dt_slup = m0_dtm_slot_add(dtx->dt_slot, oper);
+	}
 	oper_for(oper, i) {
-		if (oper_update_unique(oper, i))
+		if (oper_update_unique(oper, i)) {
+			if (UPDATE_REM(i) == NULL) {
+				continue;
+			}
 			m0_dtm_controlh_add(dtx_get(dtx, UPDATE_REM(i)),
 					    oper);
+		}
 	} oper_endfor;
 }
 
@@ -145,6 +156,10 @@ static void dtx_fixed(struct m0_dtm_history *history)
 	pa = M0_AMB(pa, history, pa_ch.ch_history);
 	dx = pa->pa_dtx;
 	M0_ASSERT(dx->dt_nr_fixed < dx->dt_nr);
+
+	if (dx->dt_nr_fixed == 0) {
+	}
+
 	if (++dx->dt_nr_fixed == dx->dt_nr) {
 	}
 }
@@ -236,6 +251,49 @@ static struct m0_dtm_history *dtx_srv_alloc(struct m0_dtm *dtm,
 		history = NULL;
 	return history;
 }
+
+
+/*
+struct m0_dtm_dtx0 {
+	struct m0_dtm *dt_dtm;
+	struct m0_dtm_dtx0_pa  *dt_pa;
+	uint64_t dt_nr_pa;
+};
+
+struct m0_dtm_dtx0_pa {
+	struct m0_dtm_update pa_up;
+	struct m0_dtm_dtx0 *pa_dtx;
+};
+
+M0_INTERNAL int m0_dtm_dtx0_init(struct m0_dtm_dtx0 *dtx,
+				 struct m0_dtm *dtm,
+				 struct m0_
+				 int nr_pa)
+{
+	int nr;
+
+	dtx->dt_dtm = dtm;
+	dtx->dt_nr_pa = nr_pa;
+	M0_ALLOC_ARR(dtx->dt_pa, dtx->dt_nr_pa);
+	M0_ASSERT(dtx->dt_pa);
+}
+
+static bool oper_has_slot(const struct m0_dtm_oper *oper);
+static bool oper_is_closed(const struct m0_dtm_oper *oper);
+
+M0_INTERNAL int m0_dtm_dtx0_add(struct m0_dtm_dtx0 *dtx,
+				struct m0_dtm_oper *oper)
+{
+	M0_PRE(oper_has_slot(oper));
+	M0_PRE(oper_is_closed(oper));
+
+	oper_for(oper, update) {
+
+
+	}
+}
+*/
+
 
 /** @} end of dtm group */
 

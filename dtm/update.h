@@ -127,6 +127,8 @@ M0_INTERNAL void m0_dtm_update_init(struct m0_dtm_update *update,
 M0_INTERNAL bool m0_dtm_update_is_user(const struct m0_dtm_update *update);
 M0_INTERNAL void m0_dtm_update_pack(const struct m0_dtm_update *update,
 				    struct m0_dtm_update_descr *updd);
+M0_INTERNAL void m0_dtm_update_pack_local(const struct m0_dtm_update *update,
+					  struct m0_dtm_update_descr *updd);
 M0_INTERNAL void m0_dtm_update_unpack(struct m0_dtm_update *update,
 				      const struct m0_dtm_update_descr *updd);
 M0_INTERNAL int m0_dtm_update_build(struct m0_dtm_update *update,

@@ -467,7 +467,7 @@ static void src_init(struct m0_dtm_remote *dtm, unsigned flags, int ctrl)
 	m0_dtm_init(&dtm_src, &dtm_id_src);
 	m0_dtm_history_type_register(&dtm_src, &src_htype);
 	m0_dtm_history_type_register(&dtm_src, &m0_dtm_fol_remote_htype);
-	m0_dtm_local_remote_init(&tgt, &dtm_id_tgt, &dtm_src,
+	m0_dtm_local_remote_init(&tgt, &dtm_tgt, &dtm_src,
 				 &test_ctx.rmc_reqh);
 
 	for (i = 0; i < ARRAY_SIZE(history_src); ++i) {
@@ -528,7 +528,7 @@ static void tgt_init(void)
 	m0_dtm_init(&dtm_tgt, &dtm_id_tgt);
 	m0_dtm_history_type_register(&dtm_tgt, &tgt_htype);
 	m0_dtm_history_type_register(&dtm_tgt, &m0_dtm_fol_remote_htype);
-	m0_dtm_local_remote_init(&local, &dtm_id_src, &dtm_tgt, NULL);
+	m0_dtm_local_remote_init(&local, &dtm_src, &dtm_tgt, NULL);
 
 	for (i = 0; i < ARRAY_SIZE(history_tgt); ++i) {
 		m0_dtm_history_init(&history_tgt[i], &dtm_tgt);

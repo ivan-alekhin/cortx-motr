@@ -158,11 +158,60 @@ M0_INTERNAL void m0_dtm_oper_done(const struct m0_dtm_oper *oper,
 	oper_unlock(oper);
 }
 
+/* checks if an update should be a part of on-wire operation (oper_desc) to
+ * the provided remote.
+ */
+static bool is_update_packable(const struct m0_dtm_update *update,
+			       const struct m0_dtm_remote *rem)
+{
+	bool match_rem = UPDATE_REM(update) == rem;
+	bool is_rfol   = HISTORY_HTYPE(UPDATE_HISTORY(update)) ==
+		&m0_dtm_fol_remote_htype;
+	bool is_slot   = HISTORY_HTYPE(UPDATE_HISTORY(update)) ==
+		&m0_dtm_slot_htype;
+	/*
+	 * XXX:
+	 * DTX needs to be packed as well but not for DTM).
+	bool is_dtx    = HISTORY_HYPE(UPDATE_HISTORY(update)) ==
+		&m0_dtm_dtx_htype;
+	*/
+
+	M0_ASSERT(ergo(is_rfol, UPDATE_REM(update) != NULL));
+
+	/* Send an update if its history remote
+	 * matches the destination or
+	 * if its history is a remote fol or slot.
+	 */
+	return match_rem || is_rfol || is_slot;
+}
+
+/* checks if an update should be delivered as-it-is or if its history
+ * type should be used as its history type (id -> rem_id replacement).
+ */
+static bool is_update_local_packable(const struct m0_dtm_update *update,
+				     const struct m0_dtm_remote *rem)
+{
+	bool match_rem = UPDATE_REM(update) == rem;
+	bool is_rfol = HISTORY_HTYPE(UPDATE_HISTORY(update)) ==
+			    &m0_dtm_fol_remote_htype;
+
+	/* The RFOL type should be replaced with the FOL type
+	 * if the RFOL points to the remote.
+	 */
+	if (is_rfol) {
+		return !match_rem;
+	}
+
+	/* Otherwise: replace the history type with its remote counterpart */
+	return false;
+}
+
 M0_INTERNAL void m0_dtm_oper_pack(struct m0_dtm_oper *oper,
 				  const struct m0_dtm_remote *rem,
 				  struct m0_dtm_oper_descr *ode)
 {
 	uint32_t idx = 0;
+
 
 	M0_PRE(oper->oprt_flags & M0_DOF_CLOSED);
 	oper_lock(oper);
@@ -170,8 +219,17 @@ M0_INTERNAL void m0_dtm_oper_pack(struct m0_dtm_oper *oper,
 	oper_for(oper, update) {
 		M0_ASSERT(HISTORY_DTM(&rem->re_fol.rfo_ch.ch_history) ==
 			  HISTORY_DTM(UPDATE_HISTORY(update)));
-		if (UPDATE_REM(update) == rem) {
-			M0_ASSERT(idx < ode->od_updates.ou_nr);
+
+		if (!is_update_packable(update, rem)) {
+			continue;
+		}
+
+		M0_ASSERT(idx < ode->od_updates.ou_nr);
+
+		if (is_update_local_packable(update, rem)) {
+			m0_dtm_update_pack_local(update,
+						 &ode->od_updates.ou_update[idx++]);
+		} else {
 			m0_dtm_update_pack(update,
 					   &ode->od_updates.ou_update[idx++]);
 		}
@@ -179,6 +237,60 @@ M0_INTERNAL void m0_dtm_oper_pack(struct m0_dtm_oper *oper,
 	ode->od_updates.ou_nr = idx;
 	oper_unlock(oper);
 }
+
+static bool is_update_any_slot_fol(const struct m0_dtm_update *update)
+{
+	const struct m0_dtm_history_type *htype;
+
+	htype = HISTORY_HTYPE(UPDATE_HISTORY(update));
+
+	return M0_IN(htype, (&m0_dtm_fol_htype,
+			     &m0_dtm_fol_remote_htype,
+			     &m0_dtm_slot_htype,
+			     &m0_dtm_slot_remote_htype));
+}
+
+/* pn == persistent notice */
+M0_INTERNAL void m0_dtm_oper_pack_pn(struct m0_dtm_oper *oper,
+				     const struct m0_dtm_remote *rem,
+				     struct m0_dtm_oper_descr *ode)
+{
+	uint32_t idx = 0;
+	bool     is_dst_rfol = false;
+	bool     is_fol = false;
+
+	M0_PRE(oper->oprt_flags & M0_DOF_CLOSED);
+	/* TODO: M0_PRE oper is locked */
+	M0_PRE(m0_dtm_oper_invariant(oper));
+	oper_for(oper, update) {
+
+		if (!is_update_any_slot_fol(update)) {
+			continue;
+		}
+
+		M0_ASSERT(idx < ode->od_updates.ou_nr);
+		is_dst_rfol = UPDATE_REM(update) == rem &&
+		    HISTORY_HTYPE(UPDATE_HISTORY(update)) ==
+		    &m0_dtm_fol_remote_htype;
+		is_fol =
+		    HISTORY_HTYPE(UPDATE_HISTORY(update)) ==
+		    &m0_dtm_fol_htype;
+
+		/* Pack everything as it is except our own FOL and the
+		 * destination RFOL.
+		 */
+		if (is_dst_rfol || is_fol) {
+			m0_dtm_update_pack(update,
+					   &ode->od_updates.ou_update[idx++]);
+		} else {
+			m0_dtm_update_pack_local(update,
+						 &ode->od_updates.ou_update[idx++]);
+		}
+
+	} oper_endfor;
+	ode->od_updates.ou_nr = idx;
+}
+
 
 M0_INTERNAL int m0_dtm_oper_build(struct m0_dtm_oper *oper, struct m0_tl *uu,
 				  const struct m0_dtm_oper_descr *ode)
@@ -206,6 +318,14 @@ M0_INTERNAL int m0_dtm_oper_build(struct m0_dtm_oper *oper, struct m0_tl *uu,
 	return result;
 }
 
+static bool is_update_reply_packable(const struct m0_dtm_update *update)
+{
+	bool is_rfol = HISTORY_HTYPE(UPDATE_HISTORY(update)) ==
+			    &m0_dtm_fol_remote_htype;
+
+	return !is_rfol;
+}
+
 M0_INTERNAL void m0_dtm_reply_pack(const struct m0_dtm_oper *oper,
 				   const struct m0_dtm_oper_descr *request,
 				   struct m0_dtm_oper_descr *reply)
@@ -226,6 +346,11 @@ M0_INTERNAL void m0_dtm_reply_pack(const struct m0_dtm_oper *oper,
 		M0_ASSERT(update->upd_up.up_state >= M0_DOS_VOLATILE);
 		M0_ASSERT(m0_dtm_descr_matches_update(update, ud));
 		M0_ASSERT(j < reply->od_updates.ou_nr);
+		/* TODO: There may be more "intelligent" way of skipping
+		 * RFOL updates for our siblings. */
+		if (!is_update_reply_packable(update)) {
+			continue;
+		}
 		m0_dtm_update_pack(update, &reply->od_updates.ou_update[j++]);
 	}
 	reply->od_updates.ou_nr = j;
@@ -265,6 +390,16 @@ M0_INTERNAL struct m0_dtm_update *m0_dtm_oper_get(const struct m0_dtm_oper *oper
 			return update;
 	} oper_endfor;
 	return NULL;
+}
+
+
+M0_INTERNAL struct m0_dtm_oper *op_oper(struct m0_dtm_op *op)
+{
+	struct m0_dtm_oper *oper;
+
+	oper = M0_AMB(oper, op, oprt_op);
+
+	return oper;
 }
 
 M0_INTERNAL bool oper_update_unique(const struct m0_dtm_oper *oper,
