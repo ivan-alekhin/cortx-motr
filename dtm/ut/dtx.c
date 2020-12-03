@@ -34,16 +34,33 @@
 
 #include "dtm/dtm.h"
 #include "dtm/fol.h"
+#include "dtm/slot.h"
 #include "dtm/dtx.h"
 #include "dtm/dtm_internal.h"
 #include "dtm/remote.h"
 
+#define M0_UT_DTM0P0 1
+
 enum {
+#if M0_UT_DTM0P0
+/* For DTM0,Phase0 we:
+ *	- do not support more than one operation in a dtx;
+ *	- use slot history type;
+ *	- use full replication (one update per remote);
+ *	- want to keep the participant list short (3 servers).
+ */
+	OPER_NR   =  1,
+	REM_NR    =  3,
+	UPDATE_NR = REM_NR,
+	DTM_NR    = REM_NR + 1,
+	FAN_NR    = UPDATE_NR/REM_NR + 1 + 1 + 2
+#else
 	OPER_NR   =  3,
 	UPDATE_NR = 15,
 	REM_NR    =  7,
 	DTM_NR    = REM_NR + 1,
 	FAN_NR    = UPDATE_NR/REM_NR + 1 + 2
+#endif
 };
 
 static struct m0_dtm              dtm_local;
@@ -67,6 +84,8 @@ static struct m0_dtm_update_descr udescr[REM_NR][OPER_NR][FAN_NR];
 static struct m0_dtm_update_descr ureply[REM_NR][OPER_NR][FAN_NR];
 static struct m0_dtm_oper_descr   ode[REM_NR][OPER_NR];
 static struct m0_dtm_oper_descr   ode_reply[REM_NR][OPER_NR];
+static struct m0_dtm_slot         slot_local;
+static struct m0_dtm_slot_remote  slot_remote[REM_NR];
 
 static void noop(struct m0_dtm_op *op)
 {}
@@ -172,17 +191,23 @@ static void init0(void)
 	m0_dtm_history_type_register(&dtm_local, &htype);
 	m0_dtm_history_type_register(&dtm_local, &m0_dtm_dtx_htype);
 	m0_dtm_history_type_register(&dtm_local, &m0_dtm_fol_remote_htype);
+	m0_dtm_history_type_register(&dtm_local, &m0_dtm_slot_htype);
+	m0_dtm_slot_init(&slot_local, &dtm_local);
 	for (i = 0; i < ARRAY_SIZE(dtm_remote); ++i) {
 		m0_dtm_init(&dtm_remote[i], &M0_UINT128(1, i + 1));
 		m0_dtm_history_type_register(&dtm_remote[i], &htype);
 		m0_dtm_history_type_register(&dtm_remote[i],
 					     &m0_dtm_dtx_srv_htype);
 		m0_dtm_history_type_register(&dtm_remote[i],
+					     &m0_dtm_slot_remote_htype);
+		m0_dtm_history_type_register(&dtm_remote[i],
 					     &m0_dtm_fol_remote_htype);
 		m0_dtm_local_remote_init(&remote_local[i],
 					 &dtm_remote[i].d_id, &dtm_local, NULL);
 		m0_dtm_local_remote_init(&remote_remote[i],
 					 &dtm_local.d_id, &dtm_remote[i], NULL);
+		m0_dtm_slot_remote_init(&slot_remote[i], &dtm_remote[i],
+					&remote_remote[i].lre_rem);
 	}
 	for (i = 0; i < UPDATE_NR; ++i) {
 		struct m0_dtm_history *history = &history_local[i];
@@ -223,6 +248,7 @@ static void fini0(void)
 		for (j = 0; j < OPER_NR; ++j)
 			m0_dtm_oper_fini(&oper_remote[i][j]);
 		m0_dtm_fol_fini(&fol_remote[i]);
+		m0_dtm_slot_remote_fini(&slot_remote[i]);
 	}
 	for (i = 0; i < OPER_NR; ++i)
 		m0_dtm_oper_fini(&oper_local[i]);
@@ -230,6 +256,7 @@ static void fini0(void)
 	for (i = 0; i < UPDATE_NR; ++i)
 		m0_dtm_history_fini(&history_local[i]);
 
+	m0_dtm_slot_fini(&slot_local);
 	for (i = 0; i < ARRAY_SIZE(dtm_remote); ++i) {
 		m0_dtm_local_remote_fini(&remote_remote[i]);
 		m0_dtm_local_remote_fini(&remote_local[i]);
@@ -238,8 +265,11 @@ static void fini0(void)
 					       &m0_dtm_dtx_srv_htype);
 		m0_dtm_history_type_deregister(&dtm_remote[i],
 					       &m0_dtm_fol_remote_htype);
+		m0_dtm_history_type_deregister(&dtm_remote[i],
+					       &m0_dtm_slot_remote_htype);
 		m0_dtm_fini(&dtm_remote[i]);
 	}
+	m0_dtm_history_type_deregister(&dtm_local, &m0_dtm_slot_htype);
 	m0_dtm_history_type_deregister(&dtm_local, &m0_dtm_dtx_htype);
 	m0_dtm_history_type_deregister(&dtm_local, &m0_dtm_fol_remote_htype);
 	m0_dtm_history_type_deregister(&dtm_local, &htype);
@@ -278,11 +308,13 @@ static void init2(void)
 		}
 		dtm_unlock(&dtm_local);
 		m0_dtm_dtx_add(&dx, &oper_local[i]);
+		m0_dtm_slot_add(&slot_local, &oper_local[i]);
 		m0_dtm_oper_close(&oper_local[i]);
 		M0_UT_ASSERT(op_state(&oper_local[i].oprt_op, M0_DOS_PREPARE));
 		for (j = 0; j < REM_NR; ++j)
 			m0_dtm_oper_prepared(&oper_local[i],
 					     &remote_local[j].lre_rem);
+		m0_dtm_oper_prepared(&oper_local[i], NULL);
 		M0_UT_ASSERT(op_state(&oper_local[i].oprt_op,
 				      M0_DOS_INPROGRESS));
 	}
@@ -373,6 +405,9 @@ static void init4(void)
 			m0_dtm_oper_done(loper, &remote_local[i].lre_rem);
 		}
 	}
+	for (i = 0; i < OPER_NR; ++i) {
+			m0_dtm_oper_done(&oper_local[i], NULL);
+	}
 	M0_UT_ASSERT(m0_forall(i, OPER_NR, op_state(&oper_local[i].oprt_op,
 						    M0_DOS_VOLATILE)));
 /*
@@ -392,9 +427,24 @@ static void fini4(void)
 	fini3();
 }
 
+static struct m0_dtm_update *find_slup(struct m0_dtm_oper *oper)
+{
+	return m0_tl_find(oper, update, &oper->oprt_op.op_ups,
+			  UPDATE_HISTORY(update)->h_ops->hio_type ==
+			  &m0_dtm_slot_htype);
+}
+
+static struct m0_dtm_update *find_rslup(struct m0_dtm_oper *oper)
+{
+	return m0_tl_find(oper, update, &oper->oprt_op.op_ups,
+			  UPDATE_HISTORY(update)->h_ops->hio_type ==
+			  &m0_dtm_slot_remote_htype);
+}
+
 static void init5(void)
 {
-	int i;
+	int i, j;
+	struct m0_dtm_update *update;
 
 	init4();
 	for (i = 0; i < REM_NR; ++i) {
@@ -403,6 +453,40 @@ static void init5(void)
 					  ~0ULL);
 		M0_UT_ASSERT(dx.dt_nr_fixed == i + 1);
 	}
+
+	for (i = 0; i < OPER_NR; ++i) {
+		update = find_slup(&oper_local[i]);
+		/* Assumption: an update for the slot history should
+		 * be a part of the operation on the dtm_local side
+		 */
+		M0_UT_ASSERT(update != NULL);
+		/* TODO: temporary assumption until RFOL code is reworked.
+		 * This assert should fail when the rule "slot is persistent
+		 * when at least one of the replicas (RFOLs) is persistent"
+		 * is implemented; so that, the expected state will be
+		 * PERSISTENT in that case.
+		 * Assumption: dtm_local side does not put the slot update
+		 * into the PERSISTENT state.
+		 */
+		M0_UT_ASSERT(UPDATE_UP(update)->up_state == M0_DOS_VOLATILE);
+	}
+
+	for (i = 0; i < REM_NR; ++i) {
+		for (j = 0; j < OPER_NR; j++) {
+			update = find_rslup(&oper_remote[i][j]);
+			/* TODO: temporary assumption until oper_pack code
+			 * is reworked. oper_pack must include slot and
+			 * RFOL updates into oper_descr.
+			 * This assert should fail when oper_pack is fixed.
+			 * Right now it is not failing because oper_pack
+			 * does not send slot updates (because there is no
+			 * DTM remote associated with a slot history).
+			 */
+			M0_UT_ASSERT(update == NULL);
+		}
+	}
+
+
 	M0_UT_ASSERT(dx.dt_nr_fixed == dx.dt_nr);
 }
 
