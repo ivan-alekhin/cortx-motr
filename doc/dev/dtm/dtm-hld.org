@@ -22,6 +22,7 @@ customers, architects, designers and developers.
 |   |   0.0.1 | <2020-12-28 Mon> | Anatoliy | Initial                                   |
 |   |   0.0.2 | <2020-12-29 Tue> | Anatoliy | Added significant sections                |
 |   |   0.0.3 | <2020-12-29 Tue> | Anatoliy | Added usecases worked through by the team |
+|   |   0.0.4 | <2021-01-09 Sat> | Ivan A.  | Reworded txr and st-related definitions   |
 * Approvals
 |   | Version | approving person | Signature, date |
 |---+---------+------------------+-----------------|
@@ -45,8 +46,8 @@ them.
 
 ** process
 
-Operating system process which is under the track of HA that can be
-associated with defined set of process states.
+An operating system process which is under the track of HA that can be
+associated with a defined set of process states.
 ** process state
 
 State in sense of availability of an arbitrary software or hardware
@@ -59,11 +60,12 @@ Processes related to DTM0 algorithm.
 ** motr HA
 
 High availability subsystem of motr responsible for orchestration of
-motr processes. Orchestration itself is a process of communication
-between HA and motr processes by sending corresponding messages and
-signals (kill, start, restart). Processes involved into orchestration
-and HA itself follow specific logic seen outside and which can be
-tracked by a chain of processes state changes.
+motr processes. Orchestration itself is a mechanism of communication
+between HA and motr processes. The mechanism is based on 
+sending of the  corresponding messages and signals (kill, start, restart).
+Processes involved into orchestration and HA itself follow a specific policy.
+The policy defined by the HA and it is based on the sequence of
+states of a process.
 ** motr service
 
 A part of motr process responsible for sending, receiving and reaction
@@ -77,129 +79,155 @@ attributes and payloads.
 ** HA message
 
 Different types of messages sent in between motr services and motr HA
-accordingly to orchestration protocol of communication. Such messages,
-sent from HA to process, carry information about process states
-(process_x goes ONLINE) and messages-triggers, sent in bidirectional
-manner w.r.t. to update process state at all ends of communication (HA
-sends "start recovery" message, process sends "recovery complete"
-message).
+accordingly to the orchestration protocol. Messages
+sent from HA to a process carry information about process states
+(process_x goes ONLINE) and messages-triggers. These messages are sent 
+in a bidirectional manner, so that the states are consistent
+on both sides (HA sends "start recovery" message, process sends 
+"recovery complete" message).
 ** DTM0
 
 Distributed transaction manager is a component or an algorithm
-maintaining consistency of storage replicas of *motr metadata* in
-distributed system in face of failures simplifying handling such
+that maintains consistency of storage replicas of *motr metadata* in
+distributed system in face of failures simplifying handling of such
 failures by means of hiding failure processing logic and providing a
-distributed transactional interface with a specific semantics to the
+distributed transactional interface with a specific semantic to the
 user.
 ** DTM0 message
 
-Different types of messages sent in between DTM0 services accordingly
-to DTM0 protocol of the communication. Payloads of these messages may
-contain modification requests to persistent state stored on underlying
-storage (PUT, DEL, REDO, etc.), service information (participants, dtx
-id, version, etc.), acknowledgments messages (PERSISTENT, EXECUTED,
-etc.).
+Different types of messages sent between DTM0 services accordingly
+to the DTM0 communication protocol. The payload of these messages may
+contain modification requests to the persistent state stored on underlying
+storage (PUT, DEL, REDO, etc.), replies to such requests (rc codes),
+service information (participants, dtx id, version, etc.),
+acknowledgments messages (PERSISTENT, EXECUTED, etc.).
+
 ** dtx
 
 Distributed transaction is a unit of modification of the distributed
 state (metadata replicas for DTM0) for the whole distributed system
 performed and treated in a reliable and coherent manner complying with
 the atomicity and durability properties (no isolation and consistency
-for DTM0). Keeping track of dependencies is performed by the dtx usage
-semantics on the originator side and will be covered later.
+for DTM0). Keeping track of dependencies is performed by dtx users
+on the originator side and will be covered later.
 
 ** dtx state
 
-The state of the dtx is seen in many places in the system still
-treated on the originator side. dtx itself limits states to EXECUTED,
-PERSISTENT, STABLE, DONE which will be covered later.
+The state of a dtx is seen in many places in the system. A subset of
+the states (EXECUTED, PERSISTENT, STABLE, DONE) is exposed to dtx users
+(on the originator side). DONE state will be covered later.
 
 ** txr
 
-Distributed transaction record is a payload of DTM0 message, delivered
-onto participants of dtx with persistent state via DTM0 messages
-onto DTM0 services by any possible means (inside CAS request data or
-as a separate network message, etc.). It includes list of dtx
-participants, information regarding underlying operation (PUT, DEL,
-etc.) complete enough to execute this operation locally and without
-any network communication with any other participants and to reach the
-persistent effect.
+Distributed transaction record is a part of a DTM0 message delivered
+onto the participants of a dtx with persistent state. A txr may be 
+a part of any kind of message (embedded into a CAS request or it can be
+a separate network message). A txr includes the list of dtx
+participants, version information and it may include the information 
+regarding the underlying operation (PUT, DEL, etc.).
+A txr may be descriptive or full. A full txr has enough information
+to execute the corresponding dtx and make it persistent without any
+additional network communication. A descriptive txr (for example,
+a PERSISTENT notice) is used to propagate DTM0-specific changes.
 
 ** operation
 
 Underlying operation for DTM0 is a request to motr metadata CAS
-service to transactional update the underlying state of metadata
-storage (PUT, DEL, etc.) provided by any possible means either by
-sending messages over the network or by performing execution of local
-to the process FOM.
+service (PUT, DEL) to transactionally update the state of 
+the underlying metadata storage (BE). Depending on the side, an operation
+is executed by sending out messages (originator) or by executing an incoming
+message (participant with persistent storage) within a FOM.
+An operation is being executed within the context of a local transaction.
 
-Operation is being performed in the context of local transaction.
 ** update
 
-Part of an operation that a remote Mero instance must execute is called an update.
+The part of an operation that a remote motr instance must execute is called
+an update.
+
 ** local transaction
 
-a transaction is a collection of modifications of persistent state.
-closed transaction is atomic with respect to process crashes that
-happen after transaction close call returns.
+A local transaction is a collection of modifications of persistent storage
+on a particular participant.
+A closed local transaction is atomic with respect to process crashes that
+could happen after transaction close call returns.
 
 ** participant
 
-a process, sending, receiving DTM0 messages and executing underlying
-operations w.r.t. DTM0 algorithm. Participant may have persistent and
-volatile state.
+Participant is a process that participates in the DTM mechanism.
+Participation involves sending and receving DTM0 messages. These actions
+may have side effects on its volatile state (execution) and/or its
+persistent state.
+Participants always have volatile state (VM). Additionally, some of them
+have persistent state (RVM) backed by local transactions.
+
 ** originator
 
-a process, a special kind of participant which initiates distributed
-transaction and receives results of local data modifications (PUT,
-DEL, etc) related to its context.
+Originator is a participant which is able to initiate a dtx and provide
+the result of a dtx (rc codes) to its user.
+
 ** recovery
 
-a process of communication accordingly to DTM0 protocol between DTM0
-services by means of DTM0 messages and execution of underlying
-operations initiated by HA. The goal of recovery process is to restore
-consistency of the distributed state across distributed system replicas.
+Recovery is a policy that defines behavior of participants when they receive 
+certain messages from the HA ("recovering", "online" and so on).
+The policy describes how the participants should restore consistency
+of the distributed state (shared across replicas) using the DTM0 messages
+mechanism (for example, "redo") and sending replies back to the HA
+(for example, "recovery is done").
+
 ** failure
 
-Loss of persistent or/and volatile state of the process or its parts.
-Seen on participant by receiving corresponding HA messages with the
-process state changes. Treated and identified on HA side only
-accrodingly to HA internal logic.
+Loss of persistent or/and volatile state of a process or its parts.
+It is seen on a participant by the means of receiving the corresponding HA
+messages with the process state changes.
+Failures are treated and identified on the HA side only as per some internal
+HA policies.
+
 ** transient failure
 
 Failure recoverable with DTM0 (process crash, restart, etc.)
+
 ** permanent failure
 
 Failure unrecoverable with DTM0 (storage controller failure, etc.)
+
 ** dependency
 
-There's not explicit dependency treatment in DTM0 design, still such
+There is no explicit dependency tracking in DTM0 design. Such
 dependencies can be injected on the originator side and treated on the
 participant side by means of ordering dtxs in time. For example,
 originator may wait until dtx1 gets to STABLE state before executing
 dtx2.
+
 ** clock
 
-an algorithm used to generate versions and tx ids in distributed system
-having property of the order.
+Clock is an algorithm used to generate versions and tx ids in a distributed
+system. Clock defines ordering (partial/total).
+
 ** version
 
-a special number used for application of operations in specific order
-supporting ordering operator.
+Version is a special number that allows participants to order execution
+of operations.
+
 ** log
 
-DTM0 log, persistent structure used by DTM0 algorithm to provide recovery.
+DTM0 log is a persistent structure that is used by DTM to perform recovery of
+failed participants.
+
 ** persistent state
 
-Persistent data stored in underlying storage.
+Persistent state is a part of the distributed state that is able to survive
+reboots (loss of the volatile state). 
+The persistent data stored in the underlying storage.
+
 ** volatile state
 
-Volatile data stored in RAM.
+Volatile state is the data stored in RAM. It cannot survive reboots.
+
 ** tombstone
 
-is a special metadata record indicating that normal key and value
-record were deleted some time ago and can be interpreted during DTM0
-recovery and other modes.
+It is a special metadata record. Such a record indicates that an ordinary KV
+record was deleted some time ago. Tombstones may be used by the DTM recovery
+(or any other mode of operation) to enforce ordering defined by the originators.
 
 * Requirements & assumptions
 #+BEGIN_QUOTE
