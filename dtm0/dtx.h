@@ -51,7 +51,7 @@ struct m0_dtm0_dtx {
 	/** An imprint of the ancient version of dtx.
 	 * This DTX was created at the begining of the time, and it was
 	 * propogated all over the codebase. Since it is really hard to
-	 * remove it, we insted venerate it by providing the very first
+	 * remove it, we instead venerate it by providing the very first
 	 * place in this new dtm0 structure. It helps to have a simple
 	 * typecast (without branded object) and no extra allocations for
 	 * this ancient but not really useful at this momemnt structure.
@@ -63,25 +63,30 @@ struct m0_dtm0_dtx {
 	struct m0_dtm0_service *dd_dtms;
 };
 
-/* This portion of the API goes against the naming convention because
- * it operates on m0_dtx (from its user's standpoint) but internally
- * it uses m0_dtm0_dtx-related code.
+/* The API below extends the existing m0_dtx API. Since it operates
+ * on m0_dtx structure in the "DTM0"-way, the naming convention here is
+ * a bit different (m0_dtx + dtm0 => m0_dtx0).
  */
 
-M0_INTERNAL int m0_dtx_dtm0_init(struct m0_dtm0_service *svc,
-				 struct m0_sm_group     *group,
-				 struct m0_dtx         **out);
-M0_INTERNAL void m0_dtx_dtm0_fini(struct m0_dtx **pdtx);
+M0_INTERNAL struct m0_dtx* m0_dtx0_alloc(struct m0_dtm0_service *svc,
+					 struct m0_sm_group     *group);
+M0_INTERNAL void m0_dtx0_free(struct m0_dtx *dtx);
 
-M0_INTERNAL int m0_dtx_dtm0_prepare(struct m0_dtx *dtx);
-M0_INTERNAL int m0_dtx_dtm0_open(struct m0_dtx  *dtx,
-				 uint32_t        nr);
-M0_INTERNAL void m0_dtx_dtm0_assign(struct m0_dtx       *dtx,
-				    uint32_t             pa_idx,
-				    const struct m0_fid *pa_fid);
-M0_INTERNAL int m0_dtx_dtm0_close(struct m0_dtx *dtx);
-M0_INTERNAL int m0_dtx_dtm0_copy_txd(struct m0_dtx *dtx,
-				     struct m0_dtm0_tx_desc *txd);
+/* Assigns TID to the transaction. */
+M0_INTERNAL int m0_dtx0_prepare(struct m0_dtx *dtx);
+
+M0_INTERNAL int m0_dtx0_open(struct m0_dtx  *dtx, uint32_t nr);
+M0_INTERNAL int m0_dtx0_assign(struct m0_dtx       *dtx,
+			       uint32_t             pa_idx,
+			       const struct m0_fid *pa_fid);
+M0_INTERNAL int m0_dtx0_close(struct m0_dtx *dtx);
+
+/* Puts a copy of dtx's transaction descriptor into "dst".
+ * User is responsible for m0_dtm0_tx_desc_fini()lasing 'dst'.
+ * If dtx is NULL then dst will be filled with the empty tx_desc.
+ */
+M0_INTERNAL int m0_dtx0_copy_txd(const struct m0_dtx    *dtx,
+				 struct m0_dtm0_tx_desc *dst);
 
 #endif /* __MOTR_DTM0_DTX_H__ */
 

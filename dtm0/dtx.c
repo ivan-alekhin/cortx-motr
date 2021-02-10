@@ -44,19 +44,19 @@ static struct m0_sm_state_descr dtx_states[] = {
 		.sd_allowed   = M0_BITS(M0_DDS_INPROGRESS),
 	},
 	[M0_DDS_INPROGRESS] = {
-		.sd_name      = "dtx-executed",
+		.sd_name      = "inprogress",
 		.sd_allowed   = M0_BITS(M0_DDS_EXECUTED, M0_DDS_FAILED),
 	},
 	[M0_DDS_EXECUTED] = {
-		.sd_name      = "dtx-persistent",
+		.sd_name      = "executed",
 		.sd_allowed   = M0_BITS(M0_DDS_PERSISTENT),
 	},
 	[M0_DDS_PERSISTENT] = {
-		.sd_name      = "dtx-persistent",
+		.sd_name      = "persistent",
 		.sd_allowed   = M0_BITS(M0_DDS_STABLE),
 	},
 	[M0_DDS_STABLE] = {
-		.sd_name      = "dtx-stable",
+		.sd_name      = "stable",
 		.sd_allowed   = M0_BITS(M0_DDS_DONE),
 	},
 	[M0_DDS_DONE] = {
@@ -64,7 +64,7 @@ static struct m0_sm_state_descr dtx_states[] = {
 		.sd_flags     = M0_SDF_TERMINAL,
 	},
 	[M0_DDS_FAILED] = {
-		.sd_name      = "dtx-failed",
+		.sd_name      = "failed",
 		.sd_flags     = M0_SDF_TERMINAL | M0_SDF_FAILURE
 	}
 };
@@ -86,57 +86,66 @@ static struct m0_sm_conf dtx_sm_conf = {
 	.scf_trans     = dtx_trans,
 };
 
-static int m0_dtm0_dtx_init(struct m0_dtm0_service *svc,
-			    struct m0_sm_group     *sm_group,
-			    struct m0_dtm0_dtx     **out)
+M0_INTERNAL void m0_dtm0_dtx_domain_init(void)
+{
+	m0_sm_conf_init(&dtx_sm_conf);
+}
+
+M0_INTERNAL void m0_dtm0_dtx_domain_fini(void)
+{
+	m0_sm_conf_fini(&dtx_sm_conf);
+}
+
+static struct m0_dtm0_dtx *m0_dtm0_dtx_alloc(struct m0_dtm0_service *svc,
+					     struct m0_sm_group     *group)
 {
 	struct m0_dtm0_dtx *dtx;
 
-	M0_ALLOC_PTR(dtx);
-	if (dtx == NULL)
-		return M0_ERR(-ENOMEM);
+	M0_PRE(svc != NULL);
+	M0_PRE(group != NULL);
 
-	m0_sm_conf_init(&dtx_sm_conf);
-	m0_sm_init(&dtx->dd_sm, &dtx_sm_conf, M0_DDS_INIT, sm_group);
-	dtx->dd_dtms = svc;
-	dtx->dd_ancient_dtx.tx_dtx = dtx;
-	*out = dtx;
-	return 0;
+	M0_ALLOC_PTR(dtx);
+	if (dtx != NULL) {
+		dtx->dd_dtms = svc;
+		dtx->dd_ancient_dtx.tx_dtx = dtx;
+		m0_sm_init(&dtx->dd_sm, &dtx_sm_conf, M0_DDS_INIT, group);
+	}
+	return dtx;
 }
 
-static void m0_dtm0_dtx_fini(struct m0_dtm0_dtx *dtx)
+static void m0_dtm0_dtx_free(struct m0_dtm0_dtx *dtx)
 {
+	M0_PRE(dtx != NULL);
 	m0_sm_fini(&dtx->dd_sm);
+	m0_dtm0_tx_desc_fini(&dtx->dd_txd);
 	m0_free(dtx);
 }
 
 static int m0_dtm0_dtx_prepare(struct m0_dtm0_dtx *dtx)
 {
 	int               rc;
-	struct m0_dtm0_ts now;
 
-	rc = m0_dtm0_clk_src_now(&dtx->dd_dtms->dos_clk_src, &now);
+	M0_PRE(dtx != NULL);
+	rc = m0_dtm0_clk_src_now(&dtx->dd_dtms->dos_clk_src,
+				 &dtx->dd_txd.dtd_id.dti_ts);
 	if (rc != 0)
-		return rc;
+		return M0_RC(rc);
 
-	dtx->dd_txd.dtd_id = (struct m0_dtm0_tid) {
-		.dti_ts  = now,
-		.dti_fid = dtx->dd_dtms->dos_generic.rs_service_fid,
-	};
-
+	dtx->dd_txd.dtd_id.dti_fid = dtx->dd_dtms->dos_generic.rs_service_fid;
 	M0_POST(m0_dtm0_tid__invariant(&dtx->dd_txd.dtd_id));
-	return rc;
+	return 0;
 }
 
 static int m0_dtm0_dtx_open(struct m0_dtm0_dtx  *dtx,
 			    uint32_t             nr)
 {
+	M0_PRE(dtx != NULL);
 	return m0_dtm0_tx_desc_init(&dtx->dd_txd, nr);
 }
 
-static void m0_dtm0_dtx_assign(struct m0_dtm0_dtx  *dtx,
-			       uint32_t             pa_idx,
-			       const struct m0_fid *pa_fid)
+static int m0_dtm0_dtx_assign(struct m0_dtm0_dtx  *dtx,
+			      uint32_t             pa_idx,
+			      const struct m0_fid *pa_fid)
 {
 	struct m0_dtm0_tx_pa   *pa;
 	struct m0_reqh         *reqh;
@@ -146,8 +155,9 @@ static void m0_dtm0_dtx_assign(struct m0_dtm0_dtx  *dtx,
 	struct m0_fid           rdtms_fid;
 	int rc;
 
-	M0_PRE(dtx);
+	M0_PRE(dtx != NULL);
 	M0_PRE(pa_idx < dtx->dd_txd.dtd_pg.dtpg_nr);
+	M0_PRE(m0_fid_is_valid(pa_fid));
 
 	/* TODO: Should we release any conf objects in the end? */
 
@@ -180,11 +190,18 @@ static void m0_dtm0_dtx_assign(struct m0_dtm0_dtx  *dtx,
 
 	M0_LOG(DEBUG, "pa: " FID_F " (User) => " FID_F " (DTM) ",
 	       FID_P(pa_fid), FID_P(&rdtms_fid));
+
+	/* TODO: All these M0_ASSERTs will be converted into IFs eventually
+	 * if we want to gracefully fail instead of m0_panic'ing in the case
+	 * where the config is not correct.
+	 */
+	return M0_RC(0);
 }
 
 static int m0_dtm0_dtx_close(struct m0_dtm0_dtx *dtx)
 {
-	M0_PRE(dtx);
+	M0_PRE(dtx != NULL);
+	M0_PRE(m0_sm_group_is_locked(dtx->dd_sm.sm_grp));
 
 	m0_sm_state_set(&dtx->dd_sm, M0_DDS_INPROGRESS);
 
@@ -193,68 +210,58 @@ static int m0_dtm0_dtx_close(struct m0_dtm0_dtx *dtx)
 	return 0;
 }
 
-M0_INTERNAL int m0_dtx_dtm0_init(struct m0_dtm0_service *svc,
-				 struct m0_sm_group     *group,
-				 struct m0_dtx         **out)
+M0_INTERNAL struct m0_dtx* m0_dtx0_alloc(struct m0_dtm0_service *svc,
+					 struct m0_sm_group     *group)
 {
 	struct m0_dtm0_dtx *dtx;
-	int                 rc;
 
-	if (svc == NULL) {
-		*out = NULL;
-		return 0;
-	}
+	dtx = m0_dtm0_dtx_alloc(svc, group);
+	if (dtx == NULL)
+		return NULL;
 
-	rc = m0_dtm0_dtx_init(svc, group, &dtx);
-	if (rc != 0)
-		return rc;
-
-	*out = &dtx->dd_ancient_dtx;
-	return 0;
+	return &dtx->dd_ancient_dtx;
 }
 
-M0_INTERNAL void m0_dtx_dtm0_fini(struct m0_dtx **pdtx)
+M0_INTERNAL void m0_dtx0_free(struct m0_dtx *dtx)
 {
-	if (*pdtx == NULL) {
-		return;
-	}
-
-	m0_dtm0_dtx_fini((*pdtx)->tx_dtx);
-	*pdtx = NULL;
+	M0_PRE(dtx != NULL);
+	m0_dtm0_dtx_free(dtx->tx_dtx);
 }
 
-M0_INTERNAL int m0_dtx_dtm0_prepare(struct m0_dtx *dtx)
+M0_INTERNAL int m0_dtx0_prepare(struct m0_dtx *dtx)
 {
-	return dtx == NULL ? 0 : m0_dtm0_dtx_prepare(dtx->tx_dtx);
+	return m0_dtm0_dtx_prepare(dtx->tx_dtx);
 }
 
-M0_INTERNAL int m0_dtx_dtm0_open(struct m0_dtx  *dtx, uint32_t nr)
+M0_INTERNAL int m0_dtx0_open(struct m0_dtx  *dtx, uint32_t nr)
 {
-	return dtx == NULL ? 0 : m0_dtm0_dtx_open(dtx->tx_dtx, nr);
+	return m0_dtm0_dtx_open(dtx->tx_dtx, nr);
 }
 
-M0_INTERNAL void m0_dtx_dtm0_assign(struct m0_dtx       *dtx,
-				    uint32_t             pa_idx,
-				    const struct m0_fid *pa_fid)
+M0_INTERNAL int m0_dtx0_assign(struct m0_dtx       *dtx,
+			       uint32_t             pa_idx,
+			       const struct m0_fid *pa_fid)
 {
-	return dtx == NULL ? 0 : m0_dtm0_dtx_assign(dtx->tx_dtx, pa_idx,
-						    pa_fid);
+	M0_PRE(dtx != NULL);
+	return m0_dtm0_dtx_assign(dtx->tx_dtx, pa_idx, pa_fid);
 }
 
-M0_INTERNAL int m0_dtx_dtm0_close(struct m0_dtx *dtx)
+M0_INTERNAL int m0_dtx0_close(struct m0_dtx *dtx)
 {
-	return dtx == NULL ? 0 : m0_dtm0_dtx_close(dtx->tx_dtx);
+	M0_PRE(dtx != NULL);
+	return m0_dtm0_dtx_close(dtx->tx_dtx);
 }
 
-M0_INTERNAL int m0_dtx_dtm0_copy_txd(struct m0_dtx *dtx,
-				     struct m0_dtm0_tx_desc *txd)
+M0_INTERNAL int m0_dtx0_copy_txd(const struct m0_dtx    *dtx,
+				 struct m0_dtm0_tx_desc *dst)
 {
 	if (dtx == NULL) {
-		M0_SET0(txd);
+		/* No DTX, no txr */
+		M0_SET0(dst);
 		return 0;
 	}
 
-	return m0_dtm0_tx_desc_copy(&dtx->tx_dtx->dd_txd, txd);
+	return m0_dtm0_tx_desc_copy(&dtx->tx_dtx->dd_txd, dst);
 }
 
 

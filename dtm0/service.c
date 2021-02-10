@@ -303,19 +303,13 @@ M0_INTERNAL bool m0_dtm0_is_a_persistent_dtm(struct m0_reqh_service *service)
 		to_dtm(service)->dos_origin == DTM0_ON_PERSISTENT;
 }
 
-M0_INTERNAL int m0_dtm0_service_find(struct m0_reqh *reqh,
-				     struct m0_dtm0_service **out)
+M0_INTERNAL struct m0_dtm0_service *m0_dtm0_service_find(struct m0_reqh *reqh)
 {
 	struct m0_reqh_service *rh_srv;
 
 	rh_srv = m0_reqh_service_find(&dtm0_service_type, reqh);
-	if (rh_srv == NULL)
-		return M0_ERR_INFO(-ENOENT, "DTM0 service is not active yet. "
-				   "Please check your m0 configuration and "
-				   "the start-up sequence.");
 
-	*out = to_dtm(rh_srv);
-	return 0;
+	return rh_srv ? to_dtm(rh_srv) : NULL;
 }
 
 /*

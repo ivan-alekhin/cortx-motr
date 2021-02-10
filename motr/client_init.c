@@ -1605,16 +1605,7 @@ int m0_client_init(struct m0_client **m0c_p,
 	/* Init the hash-table for RM contexts */
 	rm_ctx_htable_init(&m0c->m0c_rm_ctxs, M0_RM_HBUCKET_NR);
 
-	rc = m0_dtm0_service_find(&m0c->m0c_reqh, &m0c->m0c_dtms);
-	if (rc != 0) {
-		/* XXX: In UT the service may be initialised later. Such a case
-		 * is covered inside m0op initialisation.
-		 * See idx_op_init.
-		 */
-		m0c->m0c_dtms = NULL;
-		rc = M0_RC(0);
-	}
-
+	m0c->m0c_dtms = m0_dtm0_service_find(&m0c->m0c_reqh);
 
 	if (conf->mc_is_addb_init) {
 		char buf[64];
@@ -1658,8 +1649,6 @@ void m0_client_fini(struct m0_client *m0c, bool fini_m0)
 		m0_addb2_force_all();
 		m0_reqh_addb2_fini(&m0c->m0c_reqh);
 	}
-
-	m0c->m0c_dtms = NULL;
 
 	/* Finalize hash-table for RM contexts */
 	rm_ctx_htable_fini(&m0c->m0c_rm_ctxs);

@@ -45,7 +45,7 @@
 #include "dix/client_internal.h" /* m0_dix_pver */
 #include "dix/fid_convert.h"
 #include "dix/dix_addb.h"
-#include "dtm0/dtx.h"   /* m0_dtm0_dtx_* API */
+#include "dtm0/dtx.h"   /* m0_dtx0_* API */
 
 static struct m0_sm_state_descr dix_req_states[] = {
 	[DIXREQ_INIT] = {
@@ -2189,20 +2189,24 @@ static int dix_cas_rops_alloc(struct m0_dix_req *req)
 	if (cas_rop_tlist_is_empty(&rop->dg_cas_reqs))
 		return M0_ERR(-EIO);
 
-	M0_ASSERT(ergo(dtx != NULL, !req->dr_is_meta));
-	M0_ASSERT(ergo(dtx != NULL, M0_IN(req->dr_type, (DIX_PUT, DIX_DEL))));
-	rc = m0_dtx_dtm0_open(dtx,
-			      cas_rop_tlist_length(&rop->dg_cas_reqs));
-	if (rc != 0)
-		goto end;
+	if (dtx) {
+		M0_ASSERT(!req->dr_is_meta);
+		M0_ASSERT(M0_IN(req->dr_type, (DIX_PUT, DIX_DEL)));
 
-	i = 0;
+		rc = m0_dtx0_open(dtx, cas_rop_tlist_length(&rop->dg_cas_reqs));
+		if (rc != 0)
+			goto end;
+
+		i = 0; /* reset it to enumerate dtx parcticipants */
+	}
+
 	m0_tl_for(cas_rop, &rop->dg_cas_reqs, cas_rop) {
 		if (dtx) {
 			cas_svc = pc->pc_dev2svc[cas_rop->crp_sdev_idx].pds_ctx;
 			M0_ASSERT(cas_svc->sc_type == M0_CST_CAS);
-			/* TODO: Use DTM0 service fid here instead of CAS */
-			m0_dtx_dtm0_assign(dtx, i++, &cas_svc->sc_fid);
+			rc = m0_dtx0_assign(dtx, i++, &cas_svc->sc_fid);
+			if (rc != 0)
+				goto end;
 		}
 		M0_ALLOC_ARR(cas_rop->crp_attrs, cas_rop->crp_keys_nr);
 		if (cas_rop->crp_attrs == NULL) {
@@ -2222,7 +2226,8 @@ static int dix_cas_rops_alloc(struct m0_dix_req *req)
 		cas_rop->crp_cur_key = 0;
 	} m0_tl_endfor;
 
-	rc = m0_dtx_dtm0_close(dtx);
+	if (dtx)
+		rc = m0_dtx0_close(dtx);
 end:
 	if (rc != 0) {
 		dix_cas_rops_fini(&rop->dg_cas_reqs);

@@ -63,6 +63,5 @@ m0_dtm0_service_process_session_get(struct m0_reqh_service *s,
 M0_INTERNAL bool m0_dtm0_is_a_volatile_dtm(struct m0_reqh_service *service);
 M0_INTERNAL bool m0_dtm0_is_a_persistent_dtm(struct m0_reqh_service *service);
 
-M0_INTERNAL int m0_dtm0_service_find(struct m0_reqh *reqh,
-				     struct m0_dtm0_service **out);
+M0_INTERNAL struct m0_dtm0_service *m0_dtm0_service_find(struct m0_reqh *reqh);
 #endif /* __MOTR_DTM0_SERVICE_H__ */

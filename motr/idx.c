@@ -154,24 +154,16 @@ static int idx_op_init(struct m0_idx *idx, int opcode,
 	m0_op_idx_bob_init(oi);
 	m0_ast_rc_bob_init(&oi->oi_ar);
 
+#if defined(DTM0)
 	if (M0_IN(op->op_code, (M0_IC_PUT, M0_IC_DEL))) {
-		/* If DTM0 service start after m0c was initialized,
-		 * we still can get this value. Such a scenario may
-		 * happen in UTs.
-		 */
-		if (m0c->m0c_dtms == NULL) {
-			rc = m0_dtm0_service_find(&m0c->m0c_reqh,
-						  &m0c->m0c_dtms);
-		}
-		rc = rc ?: m0_dtx_dtm0_init(m0c->m0c_dtms, oi->oi_sm_grp,
-					    &oi->oi_dtx);
-#if !defined(DTM0)
-		/* In non-DTM0 mode we can freely ignore any errors */
-		rc = rc ?: M0_RC(0);
-#endif
-		if (rc != 0)
-			return rc;
+		M0_ASSERT(m0c->m0c_dtms != NULL);
+		oi->oi_dtx = m0_dtx0_alloc(m0c->m0c_dtms, oi->oi_sm_grp);
+		if (oi->oi_dtx == NULL)
+			return M0_ERR(-ENOMEM);
 	}
+#else
+	oi->oi_dtx = NULL;
+#endif
 
 	return M0_RC(0);
 }
@@ -415,10 +407,12 @@ static void idx_op_cb_launch(struct m0_op_common *oc)
 	/* Move to a different state and call the control function. */
 	m0_sm_group_lock(&op->op_entity->en_sm_group);
 
-	rc = m0_dtx_dtm0_prepare(oi->oi_dtx);
-	if (rc != 0) {
-		m0_sm_group_unlock(&op->op_entity->en_sm_group);
-		goto out;
+	if (oi->oi_dtx) {
+		rc = m0_dtx0_prepare(oi->oi_dtx);
+		if (rc != 0) {
+			m0_sm_group_unlock(&op->op_entity->en_sm_group);
+			goto out;
+		}
 	}
 
 	switch (op->op_code) {

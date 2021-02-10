@@ -229,7 +229,7 @@ struct m0_op_idx {
 	bool                oi_in_completion;
 
 	/** Distributed transaction associated with the operation */
-	struct m0_dtx *oi_dtx;
+	struct m0_dtx      *oi_dtx;
 };
 
 /**
